@@ -1,0 +1,31 @@
+game_id: "6622504e845d0e572cddc306"
+game_name: "football"
+game_category: "ball_sport"
+
+models:
+  primary:
+    type: "object_detection"
+    name: "football_detector_v2"
+    version: "2.1.0"
+    classes: ["person", "ball", "goal"]
+
+  secondary:  # Optional pose estimation
+    type: "pose_estimation"
+    name: "player_pose_v1"
+    version: "1.0.0"
+
+class_mapping:
+  internal_to_model:
+    PERSON: 0
+    BALL: 1
+    GOAL: 2
+
+features:
+  ball_tracking: true
+  goal_line_detection: true
+  offside_detection: false
+
+inference:
+  batch_size: 4
+  confidence_threshold: 0.5
+  target_fps: 25
