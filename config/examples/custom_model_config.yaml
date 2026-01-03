@@ -1,0 +1,114 @@
+# =============================================================================
+# EXAMPLE: CUSTOM MODEL CONFIGURATION
+# =============================================================================
+# This shows how to configure a custom model architecture
+# Use this when you have a non-standard model that needs special loading
+# =============================================================================
+
+game_id: "example_custom_game_123"
+game_name: "ExampleSport"
+game_category: "other"
+
+models:
+  # -------------------------
+  # Custom Model Example: RF-DETR or any custom architecture
+  # -------------------------
+  - model_id: "example_custom_model_v1"
+    model_type: "object_detection"
+    model_architecture: "custom"  # <-- This triggers custom loading
+    model_url: "s3://spectatr-models/custom/rf_detr/latest.pt"
+    version: "1.0.0"
+
+    classes_to_predict: [0, 1, 2]
+
+    class_mapping:
+      - model_class_id: 0
+        universal_class_name: "PERSON"
+      - model_class_id: 1
+        universal_class_name: "BALL"
+      - model_class_id: 2
+        universal_class_name: "GOAL"
+
+    params:
+      confidence_threshold: 0.5
+      iou_threshold: 0.45
+      max_detections: 100
+      batch_size: 4
+      # Custom input size for this model
+      input_size: [640, 640]
+      # Model-specific extra parameters
+      extra_params:
+        use_mixed_precision: true
+        num_queries: 300  # RF-DETR specific
+
+    output_format: "bbox"
+    preferred_device: "gpu"
+
+    # ==========================================================================
+    # CUSTOM MODEL CONFIG
+    # ==========================================================================
+    # This section defines how to load and use the custom model
+    custom_config:
+      # Python module path where the custom model class is defined
+      module_path: "models.rf_detr"
+
+      # Class name to instantiate
+      class_name: "RFDETRModel"
+
+      # Parameters passed to __init__
+      init_params:
+        backbone: "resnet50"
+        num_classes: 3
+        pretrained: false
+
+      # Method to call for loading weights
+      load_method: "load_weights"
+
+      # Method to call for inference
+      predict_method: "forward"
+
+# -----------------------------------------------------------------------------
+# Another example: Segmentation model with custom output handling
+# -----------------------------------------------------------------------------
+  - model_id: "example_segmentation_v1"
+    model_type: "segmentation"
+    model_architecture: "yolov8"  # YOLO also supports segmentation
+    model_url: "s3://spectatr-models/segmentation/yolov8-seg/latest.pt"
+    version: "latest"
+
+    classes_to_predict: [0]
+
+    class_mapping:
+      - model_class_id: 0
+        universal_class_name: "PERSON"
+
+    params:
+      confidence_threshold: 0.6
+      batch_size: 2
+      # Segmentation-specific: we save bbox only, not mask pixels
+      # (masks would require S3 storage)
+
+    # Even for segmentation, we save bbox only (mask is expensive to store)
+    output_format: "bbox"
+
+    preferred_device: "gpu"
+
+services:
+  - service_type: "object_detection"
+    enabled: true
+    device: "cuda:0"
+    params:
+      model_ids: ["example_custom_model_v1"]
+
+  - service_type: "segmentation"
+    enabled: true
+    device: "cuda:1"
+    params:
+      model_ids: ["example_segmentation_v1"]
+
+inference_settings:
+  target_fps: 25
+  frame_skip: 1
+  processing_resolution: [1280, 720]
+
+config_version: 1
