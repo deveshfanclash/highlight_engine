@@ -1,8 +1,11 @@
 """
 Frame Provider
 
-Extracts frames from video streams (HLS, RTSP, MP4) using FFmpeg.
+Extracts frames from video streams (HLS, RTSP, MP4) using FFmpeg or OpenCV.
 Each service gets its own FrameProvider instance for independent processing.
+
+For local files (MP4, etc.): Uses OpenCV (faster, no subprocess)
+For streams (HLS, RTSP): Uses FFmpeg
 
 Extracted and refactored from old_inference_code_for_reference/src/live_stream_processing/real_time_inference.py
 """
@@ -16,6 +19,7 @@ from typing import Iterator, Optional, Tuple, Callable
 from threading import Thread
 from enum import Enum
 
+import cv2
 import numpy as np
 
 from core.utils import get_video_resolution_and_fps, get_best_stream_url, frame_to_ms
@@ -114,6 +118,9 @@ class FrameProvider:
         self._stderr_thread: Optional[Thread] = None
         self._running = False
 
+        # OpenCV capture (for local files)
+        self._cv_capture: Optional[cv2.VideoCapture] = None
+
         # Stream metadata (populated on start)
         self.source_width: Optional[int] = None
         self.source_height: Optional[int] = None
@@ -123,6 +130,30 @@ class FrameProvider:
 
         # Frame counter
         self._frame_number = config.start_frame
+
+    @property
+    def _use_opencv(self) -> bool:
+        """
+        Determine if we should use OpenCV instead of FFmpeg.
+
+        Uses OpenCV for local files (faster, no subprocess overhead).
+        Uses FFmpeg for streams (HLS, RTSP) which require special handling.
+        """
+        # Use OpenCV for local files
+        if self.config.stream_type in (StreamType.FILE, StreamType.MP4):
+            return True
+
+        # Also use OpenCV if the URL is actually a local file path
+        url = self.config.stream_url
+        if os.path.isfile(url):
+            return True
+
+        # Check common local file extensions
+        if url.lower().endswith(('.mp4', '.avi', '.mov', '.mkv', '.webm')):
+            if not url.startswith(('http://', 'https://', 'rtsp://', 'rtmp://')):
+                return True
+
+        return False
 
     def _resolve_stream_url(self) -> str:
         """Resolve the actual stream URL (handle HLS master playlists)"""
@@ -251,6 +282,61 @@ class FrameProvider:
             logger.error(f"Error reading frame: {e}")
             return None
 
+    # =========================================================================
+    # OPENCV METHODS (for local files)
+    # =========================================================================
+
+    def _start_opencv(self) -> bool:
+        """Start OpenCV video capture for local files"""
+        try:
+            self._cv_capture = cv2.VideoCapture(self.config.stream_url)
+
+            if not self._cv_capture.isOpened():
+                logger.error(f"Could not open video file: {self.config.stream_url}")
+                return False
+
+            # Seek to start_frame if specified
+            if self.config.start_frame > 0:
+                self._cv_capture.set(cv2.CAP_PROP_POS_FRAMES, self.config.start_frame)
+                logger.info(f"Seeked to frame {self.config.start_frame}")
+
+            logger.info(f"OpenCV capture started for: {self.config.stream_url}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to start OpenCV capture: {e}")
+            return False
+
+    def _read_frame_opencv(self) -> Optional[np.ndarray]:
+        """Read a single frame using OpenCV"""
+        if not self._cv_capture or not self._cv_capture.isOpened():
+            return None
+
+        try:
+            ret, frame = self._cv_capture.read()
+
+            if not ret:
+                logger.info("End of video file detected")
+                return None
+
+            # Resize if needed
+            if self.effective_width and self.effective_height:
+                if frame.shape[1] != self.effective_width or frame.shape[0] != self.effective_height:
+                    frame = cv2.resize(frame, (self.effective_width, self.effective_height))
+
+            return frame
+
+        except Exception as e:
+            logger.error(f"Error reading frame with OpenCV: {e}")
+            return None
+
+    def _stop_opencv(self):
+        """Release OpenCV capture"""
+        if self._cv_capture:
+            self._cv_capture.release()
+            self._cv_capture = None
+            logger.info("OpenCV capture released")
+
     def initialize(self) -> bool:
         """
         Initialize the frame provider.
@@ -295,6 +381,8 @@ class FrameProvider:
         """
         Generator that yields FramePacket objects.
 
+        Automatically uses OpenCV for local files (faster) or FFmpeg for streams.
+
         Usage:
             for frame_packet in provider.frames():
                 process(frame_packet)
@@ -303,11 +391,27 @@ class FrameProvider:
             if not self.initialize():
                 return
 
-        url = self._resolve_stream_url()
-        self._process = self._start_ffmpeg(url)
         self._running = True
         self._frame_number = self.config.start_frame
 
+        # Choose backend based on input type
+        use_opencv = self._use_opencv
+
+        if use_opencv:
+            # Use OpenCV for local files
+            logger.info(f"Using OpenCV backend for: {self.config.stream_url}")
+            if not self._start_opencv():
+                return
+            yield from self._frames_opencv()
+        else:
+            # Use FFmpeg for streams
+            logger.info(f"Using FFmpeg backend for: {self.config.stream_url}")
+            url = self._resolve_stream_url()
+            self._process = self._start_ffmpeg(url)
+            yield from self._frames_ffmpeg()
+
+    def _frames_ffmpeg(self) -> Iterator[FramePacket]:
+        """Generate frames using FFmpeg backend"""
         try:
             while self._running:
                 frame = self._read_frame()
@@ -346,7 +450,51 @@ class FrameProvider:
         except GeneratorExit:
             logger.info("Frame generator stopped by consumer")
         except Exception as e:
-            logger.error(f"Error in frame generator: {e}")
+            logger.error(f"Error in FFmpeg frame generator: {e}")
+            if self.config.on_error:
+                self.config.on_error(e)
+        finally:
+            self.stop()
+            if self.config.on_complete:
+                self.config.on_complete()
+
+    def _frames_opencv(self) -> Iterator[FramePacket]:
+        """Generate frames using OpenCV backend"""
+        try:
+            while self._running:
+                frame = self._read_frame_opencv()
+
+                if frame is None:
+                    # End of video
+                    break
+
+                # Apply frame skip
+                if self.config.frame_skip > 1:
+                    if self._frame_number % self.config.frame_skip != 0:
+                        self._frame_number += 1
+                        continue
+
+                # Create frame packet
+                packet = FramePacket(
+                    frame_number=self._frame_number,
+                    frame=frame,
+                    timestamp_ms=frame_to_ms(self._frame_number, self.fps),
+                    width=self.effective_width,
+                    height=self.effective_height
+                )
+
+                yield packet
+
+                # Log progress periodically
+                if self._frame_number % 500 == 0:
+                    logger.info(f"Processing frame {self._frame_number}")
+
+                self._frame_number += 1
+
+        except GeneratorExit:
+            logger.info("Frame generator stopped by consumer")
+        except Exception as e:
+            logger.error(f"Error in OpenCV frame generator: {e}")
             if self.config.on_error:
                 self.config.on_error(e)
         finally:
@@ -373,6 +521,7 @@ class FrameProvider:
         """Stop frame extraction and cleanup"""
         self._running = False
 
+        # Stop FFmpeg if running
         if self._process:
             try:
                 if self._process.stdout:
@@ -388,6 +537,9 @@ class FrameProvider:
 
         if self._stderr_thread and self._stderr_thread.is_alive():
             self._stderr_thread.join(timeout=2)
+
+        # Stop OpenCV if running
+        self._stop_opencv()
 
         logger.info("Frame provider stopped")
 
