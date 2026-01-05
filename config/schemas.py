@@ -662,10 +662,10 @@ def create_default_football_config() -> GameConfig:
                 params=CameraViewServiceParams(),
             ),
         ],
-        inference_settings=InferenceSettings(
-            target_fps=25,
-            processing_resolution=[1280, 720],
-        ),
+        # inference_settings=InferenceSettings(
+        #     target_fps=25,
+        #     processing_resolution=[1280, 720],
+        # ),
     )
 
 
@@ -753,9 +753,9 @@ def create_default_cricket_config() -> GameConfig:
                 params=CameraViewServiceParams(),
             ),
         ],
-        inference_settings=InferenceSettings(
-            target_fps=25,
-            processing_resolution=[1920, 1080],
-            frame_skip=1,
-        ),
+        # inference_settings=InferenceSettings(
+        #     target_fps=25,
+        #     processing_resolution=[1920, 1080],
+        #     frame_skip=1,
+        # ),
     )

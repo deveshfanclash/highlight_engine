@@ -383,6 +383,13 @@ def load_config_from_env() -> Optional[GameConfig]:
 
 if __name__ == "__main__":
     import sys
+    # Ensure `config` is in sys.path for absolute imports to work
+    #---TEMP CODE START ------
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    #---TEMP CODE END ------
     import json
 
     if len(sys.argv) < 2:
