@@ -99,6 +99,7 @@ class BaseService(ABC):
         # Statistics
         self._frames_processed = 0
         self._total_processing_time_ms = 0
+        self._error: Optional[str] = None  # Set if service failed
 
     # =========================================================================
     # LIFECYCLE METHODS
@@ -258,6 +259,7 @@ class BaseService(ABC):
 
         except Exception as e:
             logger.error(f"Error in service loop: {e}")
+            self._error = str(e)
         finally:
             self.shutdown()
 
@@ -269,6 +271,34 @@ class BaseService(ABC):
     def shutdown(self):
         """Clean up and shut down the service"""
         logger.info(f"Shutting down service {self.config.service_id}")
+
+        # Calculate final statistics
+        elapsed = 0.0
+        fps = 0.0
+        if self._start_time:
+            elapsed = (datetime.utcnow() - self._start_time).total_seconds()
+            fps = self._frames_processed / elapsed if elapsed > 0 else 0
+
+        # Write service completion status to DB (before stopping writer)
+        if self._db_writer:
+            status = "FAILED" if self._error else "COMPLETED"
+            status_item = {
+                "pk": f"{self.config.match_id}#service_status",
+                "sk": self.config.service_id,
+                "match_id": self.config.match_id,
+                "service_id": self.config.service_id,
+                "status": status,
+                "frames_processed": self._frames_processed,
+                "elapsed_seconds": round(elapsed, 1),
+                "avg_fps": round(fps, 1),
+                "error": self._error,
+                "ended_at": datetime.utcnow().isoformat() + "Z",
+            }
+            try:
+                self._db_writer.write_item(status_item, immediate=True)
+                logger.info(f"Service status written: {status}")
+            except Exception as e:
+                logger.warning(f"Failed to write service status: {e}")
 
         # Stop frame provider
         if self._frame_provider:
@@ -282,13 +312,10 @@ class BaseService(ABC):
         self.cleanup()
 
         # Log final statistics
-        if self._start_time:
-            elapsed = (datetime.utcnow() - self._start_time).total_seconds()
-            fps = self._frames_processed / elapsed if elapsed > 0 else 0
-            logger.info(
-                f"Service {self.config.service_id} finished: "
-                f"{self._frames_processed} frames in {elapsed:.1f}s ({fps:.1f} FPS)"
-            )
+        logger.info(
+            f"Service {self.config.service_id} finished: "
+            f"{self._frames_processed} frames in {elapsed:.1f}s ({fps:.1f} FPS)"
+        )
 
     def _setup_signal_handlers(self):
         """Set up handlers for graceful shutdown signals"""
