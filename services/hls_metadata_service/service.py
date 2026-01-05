@@ -153,7 +153,8 @@ class HLSMetadataService:
         cmd = [
             "ffprobe", "-v", "error",
             "-select_streams", "v:0",
-            "-show_entries", "frame=pkt_pts_time",
+            "-show_frames",  # Required to actually read frame-by-frame data
+            "-show_entries", "frame=pkt_pts_time,pkt_dts_time,best_effort_timestamp_time",
             "-of", "json",
             ts_url
         ]
@@ -174,14 +175,24 @@ class HLSMetadataService:
             data = json.loads(proc.stdout)
             frames = data.get("frames", [])
 
+            # Debug: log if no frames found
+            if not frames:
+                logger.warning(f"No frames found in ffprobe output for {segment_name}. "
+                              f"Raw output length: {len(proc.stdout)} bytes")
+
             batch_items = []
             frames_processed = 0
 
             for idx, frame_data in enumerate(frames):
-                if "pkt_pts_time" not in frame_data:
+                # Try pkt_pts_time first, fallback to pkt_dts_time or best_effort_timestamp_time
+                pts_time_str = frame_data.get("pkt_pts_time") or \
+                               frame_data.get("pkt_dts_time") or \
+                               frame_data.get("best_effort_timestamp_time")
+
+                if pts_time_str is None:
                     continue
 
-                pts_time = Decimal(frame_data.get("pkt_pts_time", "0"))
+                pts_time = Decimal(pts_time_str)
 
                 item = {
                     "pk": self.config.match_id,  # Partition key

@@ -28,7 +28,7 @@ class CameraViewServiceConfig(ServiceConfig):
     # Detection thresholds
     phash_threshold: int = 20  # Hamming distance threshold for pHash
     histogram_threshold: float = 0.90  # Correlation threshold (below = cut)
-    min_frame_gap: int = 25  # Minimum frames between detected cuts
+    min_frame_gap: int = 0  # Minimum frames between detected cuts (0 = auto from fps)
 
     # Processing settings
     resolution_scale: float = 0.5  # Scale factor for processing (saves compute)
@@ -98,6 +98,7 @@ class CameraViewService(BaseService):
         self._prev_phash: Optional[imagehash.ImageHash] = None
         self._prev_hist: Optional[np.ndarray] = None
         self._last_cut_frame: int = -1000  # Large negative to allow first detection
+        self._effective_min_frame_gap: int = 25  # Default, will be computed from fps in initialize()
 
     def initialize(self) -> bool:
         """
@@ -109,10 +110,20 @@ class CameraViewService(BaseService):
         try:
             # Verify imagehash is available
             import imagehash
+
+            # Compute min_frame_gap from fps if set to auto (0)
+            # Old code: MIN_FRAME_DIFF = int(fps) -> 1 second worth of frames
+            if self.cv_config.min_frame_gap == 0 and self._frame_provider and self._frame_provider.fps:
+                self._effective_min_frame_gap = int(self._frame_provider.fps)
+                logger.info(f"Auto min_frame_gap from fps: {self._effective_min_frame_gap}")
+            else:
+                self._effective_min_frame_gap = self.cv_config.min_frame_gap if self.cv_config.min_frame_gap > 0 else 25
+
             logger.info(
                 f"Camera View Service initialized: "
                 f"phash_threshold={self.cv_config.phash_threshold}, "
-                f"histogram_threshold={self.cv_config.histogram_threshold}"
+                f"histogram_threshold={self.cv_config.histogram_threshold}, "
+                f"min_frame_gap={self._effective_min_frame_gap}"
             )
             return True
 
@@ -183,7 +194,7 @@ class CameraViewService(BaseService):
 
         # Check if minimum frame gap has passed
         frames_since_last = frame_number - self._last_cut_frame
-        if frames_since_last < self.cv_config.min_frame_gap:
+        if frames_since_last < self._effective_min_frame_gap:
             return False, phash_diff, hist_corr
 
         # Detect cut: high pHash difference AND low histogram correlation

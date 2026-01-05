@@ -97,6 +97,16 @@ class BaseService(ABC):
             True if setup successful
         """
         try:
+            # Validate start_frame and start_segment alignment
+            # IMPORTANT: These must come from HLS metadata for proper alignment
+            # Passing start_frame without correct start_segment will cause frame misalignment!
+            if self.config.start_frame > 0 and self.config.start_segment <= 1:
+                logger.warning(
+                    f"start_frame={self.config.start_frame} but start_segment={self.config.start_segment}. "
+                    f"Frame numbers may not align correctly! "
+                    f"For proper resume, both values must come from HLS metadata lookup."
+                )
+
             # Set up frame provider
             frame_config = FrameProviderConfig(
                 stream_url=self.config.stream_url,

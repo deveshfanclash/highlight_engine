@@ -82,7 +82,10 @@ def ms_to_frame(ms: int, fps: float) -> int:
 # VIDEO/STREAM UTILITIES
 # =============================================================================
 
-def get_video_resolution_and_fps(source_path: str) -> Tuple[Optional[int], Optional[int], Optional[float]]:
+def get_video_resolution_and_fps(
+    source_path: str,
+    use_avg_frame_rate: bool = False
+) -> Tuple[Optional[int], Optional[int], Optional[float]]:
     """
     Get video width, height, and FPS from a video file or stream URL.
 
@@ -90,14 +93,27 @@ def get_video_resolution_and_fps(source_path: str) -> Tuple[Optional[int], Optio
 
     Args:
         source_path: Local file path or video stream URL (.mp4 or .m3u8)
+        use_avg_frame_rate: If True, use avg_frame_rate (actual delivered rate).
+                           If False, use r_frame_rate (container rate, like old code).
+                           Default False for backward compatibility.
 
     Returns:
         Tuple of (width, height, fps) or (None, None, None) on error
+
+    Note:
+        r_frame_rate: The "real" frame rate from container metadata (may be inaccurate for HLS)
+        avg_frame_rate: The average frame rate computed from stream data (more accurate)
+
+        For HLS streams, r_frame_rate often reports 60fps while actual content is 24/25fps.
+        Use avg_frame_rate=True for more accurate frame rate detection.
     """
     try:
+        # Get both frame rates and let caller decide which to use
+        frame_rate_field = "avg_frame_rate" if use_avg_frame_rate else "r_frame_rate"
+
         cmd = (
             f'ffprobe -v error -select_streams v:0 '
-            f'-show_entries stream=width,height,r_frame_rate '
+            f'-show_entries stream=width,height,{frame_rate_field} '
             f'-of default=noprint_wrappers=1 "{source_path}"'
         )
         output = subprocess.check_output(

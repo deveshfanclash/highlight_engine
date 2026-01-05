@@ -255,19 +255,19 @@ class FrameProvider:
         """
         Initialize the frame provider.
 
-        - Resolves stream URL
-        - Detects stream metadata
+        - Detects stream metadata from ORIGINAL URL (before resolution, like old code)
+        - Resolves stream URL for actual playback
         - Sets up effective resolution
 
         Returns:
             True if initialization successful
         """
         try:
-            # Resolve actual URL
-            url = self._resolve_stream_url()
-
-            # Detect metadata
-            self.source_width, self.source_height, self.fps = self._detect_stream_metadata(url)
+            # IMPORTANT: Detect metadata from ORIGINAL URL first (before resolving)
+            # This matches old code behavior where fps is detected from master playlist
+            self.source_width, self.source_height, self.fps = self._detect_stream_metadata(
+                self.config.stream_url
+            )
 
             # Determine effective resolution
             if self.config.target_width and self.config.target_height:
