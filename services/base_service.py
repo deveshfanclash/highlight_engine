@@ -3,6 +3,12 @@ Base Service
 
 Abstract base class for all inference services.
 Defines the common lifecycle and interface that all services must implement.
+
+Configuration Hierarchy:
+- config/schemas.py::ServiceConfig - "What to run" (from MongoDB/YAML game config)
+- ServiceRunConfig (here) - "How to run it" (runtime config with stream, match ID, etc.)
+
+The orchestrator creates ServiceRunConfig by combining GameConfig + MatchConfig.
 """
 
 import os
@@ -20,11 +26,16 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ServiceConfig:
+class ServiceRunConfig:
     """
-    Base configuration for all services.
+    Runtime configuration for running a service.
 
-    Extended by specific service configs (ODServiceConfig, CameraViewServiceConfig, etc.)
+    This is the "how to run" config created by combining:
+    - GameConfig.services[n] (what service type, params)
+    - MatchConfig (stream URL, match ID)
+    - InferenceSettings (resolution, frame skip)
+
+    Extended by specific configs (ODServiceConfig, CameraViewServiceConfig)
     """
     # Identifiers
     match_id: str
@@ -54,6 +65,10 @@ class ServiceConfig:
 
     # Additional params (service-specific)
     params: Dict[str, Any] = field(default_factory=dict)
+
+
+# Backward compatibility alias
+ServiceConfig = ServiceRunConfig
 
 
 class BaseService(ABC):
