@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from core.frame_provider import FrameProvider, FrameProviderConfig, FramePacket, StreamType
+from config.schemas import InputType, ProcessingPattern
+from input_handlers import FrameInputHandler, FrameInputPacket
 from db.dynamo import DynamoDBWriter, DynamoDBWriterConfig, LocalFileWriter, create_writer
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,9 @@ class ServiceRunConfig:
     match_id: str
     service_id: str  # Unique ID for this service instance (e.g., "od_football_v2")
 
-    # Stream configuration
-    stream_url: str
-    stream_type: str = "hls"
+    # Input configuration
+    input_source: str  # Stream URL or file path
+    input_type: InputType = InputType.HLS
 
     # Processing settings
     target_width: Optional[int] = None  # None = use source resolution
@@ -66,6 +67,12 @@ class ServiceRunConfig:
     # Additional params (service-specific)
     params: Dict[str, Any] = field(default_factory=dict)
 
+    # Backward compatibility property
+    @property
+    def stream_url(self) -> str:
+        """Alias for input_source for backward compatibility"""
+        return self.input_source
+
 
 # Backward compatibility alias
 ServiceConfig = ServiceRunConfig
@@ -76,7 +83,7 @@ class BaseService(ABC):
     Abstract base class for all inference services.
 
     Provides:
-    - Common initialization (frame provider, db writer)
+    - Common initialization (input handler, db writer)
     - Lifecycle management (start, stop, run)
     - Signal handling for graceful shutdown
     - Abstract methods for service-specific logic
@@ -93,7 +100,7 @@ class BaseService(ABC):
         self._start_time: Optional[datetime] = None
 
         # Will be initialized in setup()
-        self._frame_provider: Optional[FrameProvider] = None
+        self._input_handler: Optional[FrameInputHandler] = None
         self._db_writer: Optional[DynamoDBWriter] = None
 
         # Statistics
@@ -123,20 +130,20 @@ class BaseService(ABC):
                     f"For proper resume, both values must come from HLS metadata lookup."
                 )
 
-            # Set up frame provider
-            frame_config = FrameProviderConfig(
-                stream_url=self.config.stream_url,
-                stream_type=StreamType(self.config.stream_type),
+            # Set up input handler (using new abstraction layer)
+            self._input_handler = FrameInputHandler(
+                input_source=self.config.input_source,
+                input_type=self.config.input_type,
+                processing_pattern=ProcessingPattern.FRAME_BY_FRAME,
                 target_width=self.config.target_width,
                 target_height=self.config.target_height,
                 start_frame=self.config.start_frame,
                 start_segment=self.config.start_segment,
                 frame_skip=self.config.frame_skip,
             )
-            self._frame_provider = FrameProvider(frame_config)
 
-            if not self._frame_provider.initialize():
-                logger.error("Failed to initialize frame provider")
+            if not self._input_handler.initialize():
+                logger.error("Failed to initialize input handler")
                 return False
 
             # Set up writer (DB or local file based on config)
@@ -181,12 +188,12 @@ class BaseService(ABC):
         pass
 
     @abstractmethod
-    def process_frame(self, frame_packet: FramePacket) -> Optional[Dict[str, Any]]:
+    def process_frame(self, frame_packet: FrameInputPacket) -> Optional[Dict[str, Any]]:
         """
         Process a single frame.
 
         Args:
-            frame_packet: Frame data and metadata
+            frame_packet: Frame data and metadata from input handler
 
         Returns:
             Result dict to write to DB, or None to skip writing
@@ -209,7 +216,7 @@ class BaseService(ABC):
         """
         Main service loop.
 
-        Processes frames from the stream until stopped or stream ends.
+        Processes frames from the input handler until stopped or stream ends.
         """
         if not self.setup():
             logger.error("Setup failed, cannot run service")
@@ -222,7 +229,7 @@ class BaseService(ABC):
         logger.info(f"Service {self.config.service_id} starting")
 
         try:
-            for frame_packet in self._frame_provider.frames():
+            for frame_packet in self._input_handler.iterate():
                 if not self._running:
                     logger.info("Service stopped by signal")
                     break
@@ -236,10 +243,10 @@ class BaseService(ABC):
                 if result is not None:
                     # Add common fields
                     result["pk"] = f"{self.config.match_id}#{self.config.service_id}"
-                    result["sk"] = frame_packet.frame_number
+                    result["sk"] = frame_packet.sequence_number
                     result["match_id"] = self.config.match_id
                     result["service_id"] = self.config.service_id
-                    result["frame_number"] = frame_packet.frame_number
+                    result["frame_number"] = frame_packet.sequence_number
                     result["timestamp_ms"] = frame_packet.timestamp_ms
                     result["processing_time_ms"] = int(processing_time)
 
@@ -300,9 +307,9 @@ class BaseService(ABC):
             except Exception as e:
                 logger.warning(f"Failed to write service status: {e}")
 
-        # Stop frame provider
-        if self._frame_provider:
-            self._frame_provider.stop()
+        # Stop input handler
+        if self._input_handler:
+            self._input_handler.stop()
 
         # Stop DB writer (will flush remaining items)
         if self._db_writer:
@@ -341,11 +348,17 @@ class BaseService(ABC):
         return self._frames_processed
 
     @property
-    def frame_provider(self) -> Optional[FrameProvider]:
-        """Access to frame provider (for advanced use)"""
-        return self._frame_provider
+    def input_handler(self) -> Optional[FrameInputHandler]:
+        """Access to input handler (for advanced use)"""
+        return self._input_handler
 
     @property
     def db_writer(self) -> Optional[DynamoDBWriter]:
         """Access to DB writer (for advanced use)"""
         return self._db_writer
+
+    # Backward compatibility - services that accessed _frame_provider.fps, etc.
+    @property
+    def fps(self) -> Optional[float]:
+        """Get FPS from input handler metadata"""
+        return self._input_handler.fps if self._input_handler else None

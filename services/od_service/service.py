@@ -9,8 +9,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
+from config.schemas import InputType
 from services.base_service import BaseService, ServiceConfig
-from core.frame_provider import FramePacket
+from input_handlers import FrameInputPacket
 from core.utils import ensure_model_available
 from models.yolo_model import YOLOModel, create_yolo_model
 
@@ -45,20 +46,22 @@ class ODServiceConfig(ServiceConfig):
     def from_game_config(
         cls,
         match_id: str,
-        stream_url: str,
+        input_source: str,
         model_config: Dict[str, Any],
         service_config: Dict[str, Any],
-        inference_settings: Dict[str, Any]
+        inference_settings: Dict[str, Any],
+        input_type: InputType = InputType.HLS
     ) -> "ODServiceConfig":
         """
         Create ODServiceConfig from GameConfig components.
 
         Args:
             match_id: Match identifier
-            stream_url: Stream URL
+            input_source: Stream URL or file path
             model_config: Model configuration from GameConfig
             service_config: Service configuration from GameConfig
             inference_settings: Global inference settings from GameConfig
+            input_type: Type of input source
         """
         # Build class mapping from list format to dict
         class_mapping = {}
@@ -71,8 +74,8 @@ class ODServiceConfig(ServiceConfig):
         return cls(
             match_id=match_id,
             service_id=f"od_{model_config.get('model_id', 'unknown')}",
-            stream_url=stream_url,
-            stream_type="hls",
+            input_source=input_source,
+            input_type=input_type,
             target_width=inference_settings.get("processing_resolution", [1280, 720])[0],
             target_height=inference_settings.get("processing_resolution", [1280, 720])[1],
             frame_skip=inference_settings.get("frame_skip", 1),
@@ -160,12 +163,12 @@ class ODService(BaseService):
             logger.error(f"Failed to initialize OD service: {e}")
             return False
 
-    def process_frame(self, frame_packet: FramePacket) -> Optional[Dict[str, Any]]:
+    def process_frame(self, frame_packet: FrameInputPacket) -> Optional[Dict[str, Any]]:
         """
         Process a single frame - run object detection.
 
         Args:
-            frame_packet: Frame data and metadata
+            frame_packet: Frame data and metadata from input handler
 
         Returns:
             Dict with detections for DB storage
@@ -194,7 +197,7 @@ class ODService(BaseService):
             }
 
         except Exception as e:
-            logger.error(f"Error processing frame {frame_packet.frame_number}: {e}")
+            logger.error(f"Error processing frame {frame_packet.sequence_number}: {e}")
             return None
 
     def cleanup(self):
@@ -221,7 +224,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="Object Detection Service")
     parser.add_argument("--match-id", required=True, help="Match identifier")
-    parser.add_argument("--stream-url", required=True, help="Stream URL")
+    parser.add_argument("--stream-url", required=True, help="Stream URL or file path")
+    parser.add_argument("--input-type", default="hls", choices=["hls", "mp4", "file"], help="Input type")
     parser.add_argument("--model-id", required=True, help="Model identifier")
     parser.add_argument("--model-url", help="URL to download model from")
     parser.add_argument("--model-path", help="Local path to model file")
@@ -237,6 +241,10 @@ def main():
     parser.add_argument("--start-segment", type=int, default=1, help="Segment number to start from (for HLS resume)")
 
     args = parser.parse_args()
+
+    # Map input type string to enum
+    input_type_map = {"hls": InputType.HLS, "mp4": InputType.MP4, "file": InputType.FILE}
+    input_type = input_type_map.get(args.input_type, InputType.HLS)
 
     # Parse class mapping
     class_mapping = {}
@@ -254,7 +262,8 @@ def main():
     config = ODServiceConfig(
         match_id=args.match_id,
         service_id=f"od_{args.model_id}",
-        stream_url=args.stream_url,
+        input_source=args.stream_url,
+        input_type=input_type,
         model_id=args.model_id,
         model_url=args.model_url or "",
         model_path=args.model_path or "",

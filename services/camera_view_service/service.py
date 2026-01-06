@@ -14,8 +14,9 @@ import numpy as np
 from PIL import Image
 import imagehash
 
+from config.schemas import InputType
 from services.base_service import BaseService, ServiceConfig
-from core.frame_provider import FramePacket
+from input_handlers import FrameInputPacket
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,10 @@ class CameraViewServiceConfig(ServiceConfig):
     def from_game_config(
         cls,
         match_id: str,
-        stream_url: str,
+        input_source: str,
         service_config: Dict[str, Any],
-        inference_settings: Dict[str, Any]
+        inference_settings: Dict[str, Any],
+        input_type: InputType = InputType.HLS
     ) -> "CameraViewServiceConfig":
         """
         Create CameraViewServiceConfig from GameConfig components.
@@ -50,8 +52,8 @@ class CameraViewServiceConfig(ServiceConfig):
         return cls(
             match_id=match_id,
             service_id="camera_view",
-            stream_url=stream_url,
-            stream_type="hls",
+            input_source=input_source,
+            input_type=input_type,
             # Use scaled resolution for camera view (less compute needed)
             target_width=int(res[0] * params.get("resolution_scale", 0.5)),
             target_height=int(res[1] * params.get("resolution_scale", 0.5)),
@@ -113,8 +115,8 @@ class CameraViewService(BaseService):
 
             # Compute min_frame_gap from fps if set to auto (0)
             # Old code: MIN_FRAME_DIFF = int(fps) -> 1 second worth of frames
-            if self.cv_config.min_frame_gap == 0 and self._frame_provider and self._frame_provider.fps:
-                self._effective_min_frame_gap = int(self._frame_provider.fps)
+            if self.cv_config.min_frame_gap == 0 and self.fps:
+                self._effective_min_frame_gap = int(self.fps)
                 logger.info(f"Auto min_frame_gap from fps: {self._effective_min_frame_gap}")
             else:
                 self._effective_min_frame_gap = self.cv_config.min_frame_gap if self.cv_config.min_frame_gap > 0 else 25
@@ -212,12 +214,12 @@ class CameraViewService(BaseService):
 
         return is_cut, phash_diff, hist_corr
 
-    def process_frame(self, frame_packet: FramePacket) -> Optional[Dict[str, Any]]:
+    def process_frame(self, frame_packet: FrameInputPacket) -> Optional[Dict[str, Any]]:
         """
         Process a single frame - detect camera cut.
 
         Args:
-            frame_packet: Frame data and metadata
+            frame_packet: Frame data and metadata from input handler
 
         Returns:
             Dict with camera cut info (only if cut detected), else None
@@ -231,7 +233,7 @@ class CameraViewService(BaseService):
 
             # Detect camera cut
             is_cut, phash_diff, hist_corr = self._detect_camera_cut(
-                hist, phash, frame_packet.frame_number
+                hist, phash, frame_packet.sequence_number
             )
 
             # Only write to DB if camera cut detected
@@ -246,7 +248,7 @@ class CameraViewService(BaseService):
             return None
 
         except Exception as e:
-            logger.error(f"Error processing frame {frame_packet.frame_number}: {e}")
+            logger.error(f"Error processing frame {frame_packet.sequence_number}: {e}")
             return None
 
     def cleanup(self):
@@ -271,7 +273,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="Camera View Detection Service")
     parser.add_argument("--match-id", required=True, help="Match identifier")
-    parser.add_argument("--stream-url", required=True, help="Stream URL")
+    parser.add_argument("--stream-url", required=True, help="Stream URL or file path")
+    parser.add_argument("--input-type", default="hls", choices=["hls", "mp4", "file"], help="Input type")
     parser.add_argument("--phash-threshold", type=int, default=20, help="pHash difference threshold")
     parser.add_argument("--histogram-threshold", type=float, default=0.90, help="Histogram correlation threshold")
     parser.add_argument("--min-frame-gap", type=int, default=25, help="Minimum frames between cuts")
@@ -284,11 +287,16 @@ def main():
 
     args = parser.parse_args()
 
+    # Map input type string to enum
+    input_type_map = {"hls": InputType.HLS, "mp4": InputType.MP4, "file": InputType.FILE}
+    input_type = input_type_map.get(args.input_type, InputType.HLS)
+
     # Create config
     config = CameraViewServiceConfig(
         match_id=args.match_id,
         service_id="camera_view",
-        stream_url=args.stream_url,
+        input_source=args.stream_url,
+        input_type=input_type,
         target_width=args.width,
         target_height=args.height,
         phash_threshold=args.phash_threshold,
