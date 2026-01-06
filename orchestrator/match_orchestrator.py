@@ -94,19 +94,26 @@ class MatchOrchestrator:
     def _load_config(self) -> Dict[str, Any]:
         """Load and return game configuration"""
         if self.config_path:
-            # Load from YAML
+            # Load from YAML - returns (GameConfig, ModelRegistryConfig) tuple
             from config.loader import ConfigLoader
-            config = ConfigLoader.load_from_yaml(self.config_path)
-            return config.model_dump()
+            game_config, model_registry = ConfigLoader.load_from_yaml(self.config_path)
+
+            # Combine into single dict with models embedded
+            config_dict = game_config.model_dump()
+            config_dict["models"] = [m.model_dump() for m in model_registry.models]
+            return config_dict
 
         elif self.game_id and self.mongo_uri:
             # Load from MongoDB
             from config.loader import ConfigLoader
             loader = ConfigLoader(mongo_uri=self.mongo_uri)
-            config = loader.load_game_config(self.game_id)
-            if config is None:
+            game_config, model_registry = loader.load_game_with_models(self.game_id)
+            if game_config is None:
                 raise ValueError(f"Game config not found for game_id: {self.game_id}")
-            return config.model_dump()
+
+            config_dict = game_config.model_dump()
+            config_dict["models"] = [m.model_dump() for m in model_registry.models]
+            return config_dict
 
         else:
             raise ValueError("Either config_path or (game_id + mongo_uri) must be provided")
@@ -212,11 +219,12 @@ class MatchOrchestrator:
 
     def _spawn_od_services(self, service_config: Dict, inference_settings: Dict):
         """Spawn Object Detection services (one per model)"""
-        params = service_config.get("params", {})
-        model_ids = params.get("model_ids", [])
+        # New schema: model_ids at top level; old schema: under params
+        model_ids = service_config.get("model_ids") or service_config.get("params", {}).get("model_ids", [])
         device = service_config.get("device", "cuda:0")
 
         # Get device assignment if specified
+        params = service_config.get("params", {})
         device_assignment = params.get("device_assignment", {})
 
         for model_id in model_ids:
@@ -302,17 +310,22 @@ class MatchOrchestrator:
 
     def _spawn_camera_view_service(self, service_config: Dict, inference_settings: Dict):
         """Spawn Camera View service"""
+        # Support both new schema (top level) and old schema (under params)
         params = service_config.get("params", {})
         resolution = inference_settings.get("processing_resolution", [1280, 720])
-        scale = params.get("resolution_scale", 0.5)
+        scale = service_config.get("resolution_scale") or params.get("resolution_scale", 0.5)
+
+        phash_threshold = service_config.get("phash_threshold") or params.get("phash_threshold", 20)
+        histogram_threshold = service_config.get("histogram_threshold") or params.get("histogram_threshold", 0.90)
+        min_frame_gap = service_config.get("min_frame_gap") or params.get("min_frame_gap", 25)
 
         cmd = [
             sys.executable, "-m", "services.camera_view_service",
             "--match-id", self.match_id,
             "--stream-url", self.stream_url,
-            "--phash-threshold", str(params.get("phash_threshold", 20)),
-            "--histogram-threshold", str(params.get("histogram_threshold", 0.90)),
-            "--min-frame-gap", str(params.get("min_frame_gap", 25)),
+            "--phash-threshold", str(phash_threshold),
+            "--histogram-threshold", str(histogram_threshold),
+            "--min-frame-gap", str(min_frame_gap),
             "--width", str(int(resolution[0] * scale)),
             "--height", str(int(resolution[1] * scale)),
         ]

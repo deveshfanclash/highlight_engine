@@ -214,7 +214,7 @@ def ensure_model_available(
     Ensure model file is available locally, downloading if needed.
 
     Args:
-        model_url: URL to download model from
+        model_url: URL to download model from (or local path)
         local_path: Local path to store/check model
         force_download: If True, download even if file exists
 
@@ -224,10 +224,24 @@ def ensure_model_available(
     Raises:
         RuntimeError: If model cannot be obtained
     """
+    # Check if local_path already exists
     if os.path.exists(local_path) and not force_download:
         logger.info(f"Model already exists: {local_path}")
         return local_path
 
+    # Check if model_url is actually a local path
+    if os.path.exists(model_url):
+        logger.info(f"Model is local file: {model_url}")
+        return model_url
+
+    # Check for relative path from current directory
+    if not model_url.startswith(("http://", "https://", "s3://")):
+        # Might be a relative path
+        if os.path.exists(os.path.abspath(model_url)):
+            logger.info(f"Model is relative path: {model_url}")
+            return os.path.abspath(model_url)
+
+    # Download from URL
     if not download_file(model_url, local_path):
         raise RuntimeError(f"Failed to download model from {model_url}")
 

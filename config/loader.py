@@ -1,45 +1,59 @@
 """
 Configuration Loader
 
-Loads game configurations from:
+Loads game and model configurations from:
 - MongoDB (production)
 - YAML files (development/testing)
 - Environment variables (overrides)
 
-Usage:
-    from config.loader import ConfigLoader
-
-    # Load from MongoDB
-    loader = ConfigLoader(mongo_uri="mongodb://...")
-    config = loader.load_game_config("football")
-
-    # Load from YAML (development)
-    config = ConfigLoader.load_from_yaml("config/examples/football_config.yaml")
+New Structure:
+- GameConfig: References model_ids (not embedding models)
+- ModelRegistryConfig: Independent model definitions
+- Typed service configs per service type
 """
 
 import os
 import yaml
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from pathlib import Path
 
 from config.schemas import (
-    GameConfig,
-    MatchConfig,
+    # Enums
+    ModelType,
+    ModelArchitecture,
+    ServiceType,
+    GameCategory,
     MatchStatus,
-    ModelConfig,
-    ServiceConfig,
+    InputType,
+    OutputFormat,
+    # Model
     ClassMapping,
     ModelParams,
-    CustomModelConfig,
-    ODServiceParams,
-    CameraViewServiceParams,
+    ModelConfig,
+    ModelRegistryConfig,
+    # Service
+    ODServiceConfig,
+    CameraViewServiceConfig,
+    SegmentationServiceConfig,
+    ReplayDetectionServiceConfig,
+    EventDetectionServiceConfig,
+    AudioAnalysisServiceConfig,
+    HLSMetadataServiceConfig,
+    create_service_from_dict,
+    # Game
     InferenceSettings,
+    GameConfig,
+    MatchConfig,
 )
 
 
 class ConfigLoader:
     """
     Unified configuration loader supporting multiple sources.
+
+    New structure separates:
+    - GameConfig: What services to run, references model_ids
+    - ModelRegistryConfig: Independent model definitions
     """
 
     def __init__(self, mongo_uri: Optional[str] = None, mongo_db: str = "inference_db"):
@@ -70,15 +84,19 @@ class ConfigLoader:
     # =========================================================================
 
     @staticmethod
-    def load_from_yaml(yaml_path: str) -> GameConfig:
+    def load_from_yaml(yaml_path: str) -> Tuple[GameConfig, ModelRegistryConfig]:
         """
-        Load GameConfig from a YAML file.
+        Load GameConfig and ModelRegistryConfig from a YAML file.
+
+        The YAML file should have two top-level keys:
+        - game: GameConfig data
+        - models: List of ModelConfig data
 
         Args:
             yaml_path: Path to YAML config file
 
         Returns:
-            GameConfig object
+            Tuple of (GameConfig, ModelRegistryConfig)
         """
         path = Path(yaml_path)
         if not path.exists():
@@ -87,76 +105,102 @@ class ConfigLoader:
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
 
-        return ConfigLoader._parse_game_config(data)
+        # Parse models first (they're independent)
+        model_registry = ConfigLoader._parse_model_registry(data.get('models', []))
 
-    # To read from data and convert back to compatible code level config format.
+        # Parse game config (references model_ids)
+        game_config = ConfigLoader._parse_game_config(data)
+
+        return game_config, model_registry
+
     @staticmethod
-    def _parse_game_config(data: Dict[str, Any]) -> GameConfig:
-        """Parse raw dict into GameConfig object"""
-        # Parse models
+    def load_game_from_yaml(yaml_path: str) -> GameConfig:
+        """Load only GameConfig from YAML (backward compatibility)"""
+        game_config, _ = ConfigLoader.load_from_yaml(yaml_path)
+        return game_config
+
+    @staticmethod
+    def _parse_model_registry(models_data: List[Dict[str, Any]]) -> ModelRegistryConfig:
+        """Parse model list into ModelRegistryConfig"""
         models = []
-        for model_data in data.get('models', []):
+
+        for model_data in models_data:
             # Parse class mapping
-            class_mapping = [
-                ClassMapping(**cm) for cm in model_data.get('class_mapping', [])
-            ]
+            class_mapping = []
+            for cm in model_data.get('class_mapping', []):
+                if isinstance(cm, dict):
+                    class_mapping.append(ClassMapping(
+                        model_class_id=cm['model_class_id'],
+                        universal_class_name=cm['universal_class_name'],
+                        confidence_threshold=cm.get('confidence_threshold'),
+                    ))
 
             # Parse params
             params_data = model_data.get('params', {})
-            params = ModelParams(**params_data)
-
-            # Parse custom config if present
-            custom_config = None
-            if model_data.get('custom_config'):
-                custom_config = CustomModelConfig(**model_data['custom_config'])
+            params = ModelParams(
+                confidence_threshold=params_data.get('confidence_threshold', 0.5),
+                iou_threshold=params_data.get('iou_threshold', 0.45),
+                max_detections=params_data.get('max_detections', 100),
+                batch_size=params_data.get('batch_size', 1),
+                input_size=params_data.get('input_size'),
+                half_precision=params_data.get('half_precision', False),
+                extra=params_data.get('extra', {}),
+            )
 
             models.append(ModelConfig(
                 model_id=model_data['model_id'],
-                model_type=model_data['model_type'],
-                model_architecture=model_data.get('model_architecture', 'yolov8'),
+                model_name=model_data.get('model_name', ''),
+                model_type=ModelType(model_data['model_type']),
+                model_architecture=ModelArchitecture(
+                    model_data.get('model_architecture', 'yolov8')
+                ),
                 model_url=model_data['model_url'],
                 version=model_data.get('version', 'latest'),
-                classes_to_predict=model_data['classes_to_predict'],
+                classes_to_predict=model_data.get('classes_to_predict', []),
                 class_mapping=class_mapping,
                 params=params,
-                output_format=model_data.get('output_format', 'bbox'),
+                output_format=OutputFormat(model_data.get('output_format', 'bbox')),
                 preferred_device=model_data.get('preferred_device', 'gpu'),
-                custom_config=custom_config,
             ))
+
+        return ModelRegistryConfig(models=models)
+
+    @staticmethod
+    def _parse_game_config(data: Dict[str, Any]) -> GameConfig:
+        """Parse raw dict into GameConfig object"""
+        # Get game data (might be nested under 'game' key or at root)
+        game_data = data.get('game', data)
+
+        # Extract model_ids from services or models list
+        model_ids = game_data.get('model_ids', [])
+
+        # If model_ids not provided, extract from models list (legacy support)
+        if not model_ids and 'models' in data:
+            model_ids = [m.get('model_id') for m in data['models'] if m.get('model_id')]
 
         # Parse services
         services = []
-        for service_data in data.get('services', []):
-            service_type = service_data['service_type']
-            params_data = service_data.get('params', {})
-
-            # Create appropriate params object based on service type
-            if service_type == 'object_detection':
-                params = ODServiceParams(**params_data)
-            elif service_type == 'camera_view':
-                params = CameraViewServiceParams(**params_data)
-            else:
-                params = params_data  # Generic dict for unknown types
-
-            services.append(ServiceConfig(
-                service_type=service_type,
-                enabled=service_data.get('enabled', True),
-                device=service_data.get('device', 'cpu'),
-                params=params,
-            ))
+        for service_data in game_data.get('services', []):
+            service = create_service_from_dict(service_data)
+            services.append(service)
 
         # Parse inference settings
-        inference_data = data.get('inference_settings', {})
-        inference_settings = InferenceSettings(**inference_data)
+        inference_data = game_data.get('inference_settings', {})
+        inference_settings = InferenceSettings(
+            target_fps=inference_data.get('target_fps', 25),
+            frame_skip=inference_data.get('frame_skip', 1),
+            processing_resolution=inference_data.get('processing_resolution', [1280, 720]),
+            stream_buffer_size=inference_data.get('stream_buffer_size', 30),
+        )
 
         return GameConfig(
-            game_id=data['game_id'],
-            game_name=data['game_name'],
-            game_category=data.get('game_category', 'other'),
-            models=models,
+            game_id=game_data['game_id'],
+            game_name=game_data['game_name'],
+            game_category=GameCategory(game_data.get('game_category', 'ball_sport')),
+            model_ids=model_ids,
             services=services,
             inference_settings=inference_settings,
-            config_version=data.get('config_version', 1),
+            config_version=game_data.get('config_version', 1),
         )
 
     # =========================================================================
@@ -188,50 +232,54 @@ class ConfigLoader:
 
         return self._parse_game_config(data)
 
-    def load_game_config_by_name(self, game_name: str) -> Optional[GameConfig]:
-        """Load GameConfig by game name (case-insensitive)"""
+    def load_model_registry(self, game_id: Optional[str] = None) -> ModelRegistryConfig:
+        """
+        Load ModelRegistryConfig from MongoDB.
+
+        Args:
+            game_id: If provided, only load models for this game
+
+        Returns:
+            ModelRegistryConfig with all relevant models
+        """
         if not self.mongo_client:
             raise ValueError("MongoDB URI not configured")
 
         db = self.mongo_client[self.mongo_db]
-        collection = db['game_configs']
+        collection = db['models']
 
-        data = collection.find_one({
-            "game_name": {"$regex": f"^{game_name}$", "$options": "i"}
-        })
-        if not data:
-            return None
+        # Query based on game_id if provided
+        query = {}
+        if game_id:
+            # First get game config to find model_ids
+            game_config = self.load_game_config(game_id)
+            if game_config and game_config.model_ids:
+                query = {"model_id": {"$in": game_config.model_ids}}
 
-        data.pop('_id', None)
-        return self._parse_game_config(data)
+        models_data = list(collection.find(query))
 
-    # def save_game_config(self, config: GameConfig) -> bool:
-    #     """
-    #     Save GameConfig to MongoDB.
+        # Remove MongoDB _id fields
+        for model in models_data:
+            model.pop('_id', None)
 
-    #     Args:
-    #         config: GameConfig object to save
+        return self._parse_model_registry(models_data)
 
-    #     Returns:
-    #         True if successful
-    #     """
-    #     if not self.mongo_client:
-    #         raise ValueError("MongoDB URI not configured")
+    def load_game_with_models(
+        self,
+        game_id: str
+    ) -> Tuple[Optional[GameConfig], ModelRegistryConfig]:
+        """
+        Load both GameConfig and its associated models.
 
-    #     db = self.mongo_client[self.mongo_db]
-    #     collection = db['game_configs']
+        Args:
+            game_id: Game identifier
 
-    #     # Convert to dict
-    #     data = config.model_dump()
-
-    #     # Upsert by game_id
-    #     result = collection.update_one(
-    #         {"game_id": config.game_id},
-    #         {"$set": data},
-    #         upsert=True
-    #     )
-
-    #     return result.acknowledged
+        Returns:
+            Tuple of (GameConfig, ModelRegistryConfig)
+        """
+        game_config = self.load_game_config(game_id)
+        model_registry = self.load_model_registry(game_id)
+        return game_config, model_registry
 
     # =========================================================================
     # MATCH CONFIG OPERATIONS
@@ -246,53 +294,28 @@ class ConfigLoader:
         **kwargs
     ) -> MatchConfig:
         """
-        Create a new match config with frozen game config snapshot.
+        Create a new match config.
 
         Args:
             match_id: Unique match identifier
-            game_id: Game ID to load config from
+            game_id: Game ID to reference
             stream_url: Stream URL for this match
             stream_type: Type of stream (hls, rtsp, mp4)
             **kwargs: Additional match metadata (league, tournament, etc.)
 
         Returns:
-            MatchConfig with frozen config snapshot
+            MatchConfig instance
         """
-        # Load game config
-        game_config = self.load_game_config(game_id)
-        if not game_config:
-            raise ValueError(f"Game config not found for game_id: {game_id}")
-
-        # Create match config with frozen snapshot
         match_config = MatchConfig(
             match_id=match_id,
             game_id=game_id,
             stream_url=stream_url,
-            stream_type=stream_type,
+            stream_type=InputType(stream_type),
             status=MatchStatus.PENDING,
-            config_snapshot=game_config,
             **kwargs
         )
 
         return match_config
-
-    # def save_match_config(self, config: MatchConfig) -> bool:
-    #     """Save MatchConfig to MongoDB"""
-    #     if not self.mongo_client:
-    #         raise ValueError("MongoDB URI not configured")
-
-    #     db = self.mongo_client[self.mongo_db]
-    #     collection = db['matches']
-
-    #     data = config.model_dump()
-
-    #     result = collection.update_one(
-    #         {"match_id": config.match_id},
-    #         {"$set": data},
-    #         upsert=True
-    #     )
-
-    #     return result.acknowledged
 
     def load_match_config(self, match_id: str) -> Optional[MatchConfig]:
         """Load MatchConfig from MongoDB"""
@@ -308,47 +331,24 @@ class ConfigLoader:
 
         data.pop('_id', None)
 
-        # Parse the nested config_snapshot
-        if data.get('config_snapshot'):
-            data['config_snapshot'] = self._parse_game_config(data['config_snapshot'])
-
         return MatchConfig(**data)
-
-    # def update_match_status(
-    #     self,
-    #     match_id: str,
-    #     status: MatchStatus,
-    #     last_frame: Optional[int] = None
-    # ) -> bool:
-    #     """Update match status"""
-    #     if not self.mongo_client:
-    #         raise ValueError("MongoDB URI not configured")
-
-    #     db = self.mongo_client[self.mongo_db]
-    #     collection = db['matches']
-
-    #     update_data = {"status": status.value}
-    #     if last_frame is not None:
-    #         update_data["last_processed_frame"] = last_frame
-
-    #     result = collection.update_one(
-    #         {"match_id": match_id},
-    #         {"$set": update_data}
-    #     )
-
-    #     return result.modified_count > 0
 
 
 # =============================================================================
 # CONVENIENCE FUNCTIONS
 # =============================================================================
 
-def load_config_from_yaml(yaml_path: str) -> GameConfig:
+def load_config_from_yaml(yaml_path: str) -> Tuple[GameConfig, ModelRegistryConfig]:
     """Convenience function to load config from YAML"""
     return ConfigLoader.load_from_yaml(yaml_path)
 
 
-def load_config_from_env() -> Optional[GameConfig]:
+def load_game_from_yaml(yaml_path: str) -> GameConfig:
+    """Convenience function to load only game config from YAML"""
+    return ConfigLoader.load_game_from_yaml(yaml_path)
+
+
+def load_config_from_env() -> Optional[Tuple[GameConfig, ModelRegistryConfig]]:
     """
     Load config based on environment variables.
 
@@ -372,7 +372,7 @@ def load_config_from_env() -> Optional[GameConfig]:
         if not mongo_uri or not game_id:
             raise ValueError("MONGO_URI and GAME_ID env vars required for mongodb source")
         loader = ConfigLoader(mongo_uri=mongo_uri)
-        return loader.load_game_config(game_id)
+        return loader.load_game_with_models(game_id)
 
     else:
         raise ValueError(f"Unknown CONFIG_SOURCE: {source}")
@@ -384,13 +384,6 @@ def load_config_from_env() -> Optional[GameConfig]:
 
 if __name__ == "__main__":
     import sys
-    # Ensure `config` is in sys.path for absolute imports to work
-    #---TEMP CODE START ------
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
-    #---TEMP CODE END ------
     import json
 
     if len(sys.argv) < 2:
@@ -400,22 +393,26 @@ if __name__ == "__main__":
     yaml_path = sys.argv[1]
 
     try:
-        config = ConfigLoader.load_from_yaml(yaml_path)
+        game_config, model_registry = ConfigLoader.load_from_yaml(yaml_path)
         print("=" * 60)
-        print(f"Loaded config for: {config.game_name}")
+        print(f"Loaded config for: {game_config.game_name}")
         print("=" * 60)
-        print(f"Game ID: {config.game_id}")
-        print(f"Category: {config.game_category}")
-        print(f"Models: {len(config.models)}")
-        for model in config.models:
+        print(f"Game ID: {game_config.game_id}")
+        print(f"Category: {game_config.game_category}")
+        print(f"Model IDs: {game_config.model_ids}")
+        print(f"\nModels in Registry: {len(model_registry.models)}")
+        for model in model_registry.models:
             print(f"  - {model.model_id} ({model.model_type})")
-            print(f"    Classes: {[cm.universal_class_name for cm in model.class_mapping]}")
-        print(f"Services: {len(config.services)}")
-        for service in config.services:
+            classes = [cm.universal_class_name for cm in model.class_mapping]
+            print(f"    Classes: {classes}")
+        print(f"\nServices: {len(game_config.services)}")
+        for service in game_config.services:
             print(f"  - {service.service_type} (enabled={service.enabled}, device={service.device})")
         print("=" * 60)
-        print("\nJSON Export:")
-        print(json.dumps(config.model_dump(), indent=2, default=str))
+        print("\nGame Config JSON:")
+        print(json.dumps(game_config.model_dump(), indent=2, default=str))
     except Exception as e:
         print(f"Error loading config: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)

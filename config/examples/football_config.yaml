@@ -1,80 +1,94 @@
 # =============================================================================
-# FOOTBALL GAME CONFIGURATION
+# FOOTBALL GAME CONFIGURATION (New Structure)
 # =============================================================================
-# This config is stored in MongoDB collection: game_configs
-# Single model, standard setup for football matches
+# New design principles:
+# - Models are defined independently (can be reused across games)
+# - Game config references model_ids (not embedding full model configs)
+# - Services are typed per service type (fields at top level, not nested params)
 # =============================================================================
 
-game_id: "6622504e845d0e572cddc306"
-game_name: "Football"
-game_category: "ball_sport"
-
-# -----------------------------------------------------------------------------
-# MODELS
-# -----------------------------------------------------------------------------
-# Football uses a single object detection model
+# =============================================================================
+# MODELS (Independent - can be shared across games, stored in 'models' collection)
+# =============================================================================
 models:
-  - model_id: "football_od_v2"
-    model_type: "object_detection"
-    model_architecture: "yolov8"
-    model_url: "s3://spectatr-models/football/6622504e845d0e572cddc306/latest.pt"
-    version: "latest"
-
-    # Classes this model should predict (model's native class IDs)
+  - model_id: football_od_v2
+    model_name: Football Object Detection v2
+    model_type: object_detection
+    model_architecture: yolov8
+    model_url: s3://spectatr-models/football/6622504e845d0e572cddc306/latest.pt
+    version: "2.1.0"
     classes_to_predict: [0, 1, 2]
-
-    # Mapping from model's class IDs to universal class names
     class_mapping:
       - model_class_id: 0
-        universal_class_name: "PERSON"
+        universal_class_name: PERSON
       - model_class_id: 1
-        universal_class_name: "BALL"
+        universal_class_name: BALL
       - model_class_id: 2
-        universal_class_name: "GOAL"
-
-    # Model inference parameters
+        universal_class_name: GOAL
     params:
       confidence_threshold: 0.5
       iou_threshold: 0.45
       max_detections: 100
       batch_size: 4
       half_precision: false
+    output_format: bbox
+    preferred_device: gpu
 
-    output_format: "bbox"
-    preferred_device: "gpu"
+# =============================================================================
+# GAME CONFIG (Stored in 'game_configs' collection)
+# =============================================================================
+game_id: "6622504e845d0e572cddc306"
+game_name: Football
+game_category: ball_sport
+config_version: 1
+
+# Reference to models by ID (models are loaded from registry)
+model_ids:
+  - football_od_v2
 
 # -----------------------------------------------------------------------------
-# SERVICES
+# SERVICES (Typed per service type - fields at top level)
 # -----------------------------------------------------------------------------
-# What services to run for this game
 services:
-  # Object Detection Service
-  - service_type: "object_detection"
+  # Object Detection Service (ODServiceConfig)
+  - service_type: object_detection
     enabled: true
-    device: "cuda:0"
-    params:
-      model_ids: ["football_od_v2"]
+    device: cuda:0
+    # OD-specific fields at top level
+    model_ids:
+      - football_od_v2
+    frame_skip: 1
+    target_width: 1280
+    target_height: 720
+    db_table_name: inference_results
+    db_batch_size: 12
+    db_flush_interval_ms: 250
 
-  # Camera View Detection Service
-  - service_type: "camera_view"
+  # Camera View Detection Service (CameraViewServiceConfig)
+  - service_type: camera_view
     enabled: true
-    device: "cpu"
-    params:
-      phash_threshold: 20
-      histogram_threshold: 0.90
-      min_frame_gap: 25
-      resolution_scale: 0.5
+    device: cpu
+    # Camera view specific fields at top level
+    phash_threshold: 20
+    histogram_threshold: 0.90
+    min_frame_gap: 25
+    resolution_scale: 0.5
+    frame_skip: 1
+
+  # HLS Metadata Service (HLSMetadataServiceConfig)
+  - service_type: hls_metadata
+    enabled: true
+    device: cpu
+    # HLS metadata specific fields
+    poll_interval_seconds: 5
+    timeout_no_segment_seconds: 60
+    resolution_preference: "_480p.m3u8"
 
 # -----------------------------------------------------------------------------
-# INFERENCE SETTINGS
+# INFERENCE SETTINGS (Global defaults)
 # -----------------------------------------------------------------------------
 inference_settings:
   target_fps: 25
   frame_skip: 1
   processing_resolution: [1280, 720]
   stream_buffer_size: 30
-  db_write_batch_size: 12
-  db_write_interval_ms: 250
-
-# Metadata
-config_version: 1

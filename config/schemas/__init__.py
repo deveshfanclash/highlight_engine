@@ -1,21 +1,18 @@
 """
-Configuration Module
+Configuration Schemas
 
-Provides configuration schemas and utilities for the inference system.
+Clean, typed configuration for the inference system.
 
-New Structure:
-- config/schemas/ - Modular schema definitions
-  - enums.py - All enumeration types
-  - model.py - Model configurations (independent, A/B testing support)
-  - service.py - Service configurations (typed per service)
-  - game.py - Game configurations (references model_ids)
-  - output.py - Output schemas for database writes
-- config/loader.py - Load configs from YAML or MongoDB
+Structure:
+- enums.py: All enumeration types
+- model.py: Model configurations (independent, supports A/B testing)
+- service.py: Service configurations (typed per service)
+- game.py: Game configurations (references models by ID)
+- output.py: Output schemas for database writes
 """
 
-# Import from new schemas module
-from config.schemas import (
-    # Enums
+# Enums
+from config.schemas.enums import (
     ModelType,
     ModelArchitecture,
     ServiceType,
@@ -25,14 +22,18 @@ from config.schemas import (
     GameCategory,
     MatchStatus,
     OutputFormat,
+)
 
-    # Model Config
+# Model configs
+from config.schemas.model import (
     ClassMapping,
     ModelParams,
     ModelConfig,
     ModelRegistryConfig,
+)
 
-    # Service Configs (typed per service)
+# Service configs
+from config.schemas.service import (
     BaseServiceConfig,
     ODServiceConfig,
     CameraViewServiceConfig,
@@ -42,33 +43,24 @@ from config.schemas import (
     AudioAnalysisServiceConfig,
     HLSMetadataServiceConfig,
     create_service_config,
+)
 
-    # Game Config
+# Game configs
+from config.schemas.game import (
     InferenceSettings,
     GameConfig,
     MatchConfig,
     ServiceConfigUnion,
     create_service_from_dict,
+)
 
-    # Output Schemas
+# Output schemas
+from config.schemas.output import (
     BoundingBox,
     Detection,
     InferenceOutput,
     CameraViewOutput,
     HLSMetadataOutput,
-)
-
-from config.class_registry import (
-    UniversalClassID,
-    ClassDefinition,
-    UNIVERSAL_CLASS_REGISTRY,
-    get_class_by_name,
-    get_class_by_id,
-    get_classes_for_sport,
-    get_class_id,
-    get_class_name,
-    validate_class_name,
-    create_model_to_universal_mapping,
 )
 
 __all__ = [
@@ -82,14 +74,12 @@ __all__ = [
     "GameCategory",
     "MatchStatus",
     "OutputFormat",
-
-    # Model Config
+    # Model
     "ClassMapping",
     "ModelParams",
     "ModelConfig",
     "ModelRegistryConfig",
-
-    # Service Configs
+    # Service
     "BaseServiceConfig",
     "ODServiceConfig",
     "CameraViewServiceConfig",
@@ -99,30 +89,16 @@ __all__ = [
     "AudioAnalysisServiceConfig",
     "HLSMetadataServiceConfig",
     "create_service_config",
-
-    # Game Config
+    # Game
     "InferenceSettings",
     "GameConfig",
     "MatchConfig",
     "ServiceConfigUnion",
     "create_service_from_dict",
-
-    # Output Schemas
+    # Output
     "BoundingBox",
     "Detection",
     "InferenceOutput",
     "CameraViewOutput",
     "HLSMetadataOutput",
-
-    # Class Registry
-    "UniversalClassID",
-    "ClassDefinition",
-    "UNIVERSAL_CLASS_REGISTRY",
-    "get_class_by_name",
-    "get_class_by_id",
-    "get_classes_for_sport",
-    "get_class_id",
-    "get_class_name",
-    "validate_class_name",
-    "create_model_to_universal_mapping",
 ]
