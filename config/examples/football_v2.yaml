@@ -1,0 +1,83 @@
+# =============================================================================
+# Football Game Configuration (v2 Schema)
+# =============================================================================
+# Clean, simple, extensible configuration format.
+# - Models are defined once, referenced by services
+# - Services can override input settings if needed
+# - Output is configurable per environment
+# =============================================================================
+
+# Game identity
+id: football
+name: Football
+category: ball_sport
+
+# -----------------------------------------------------------------------------
+# INPUT - How to read the stream
+# -----------------------------------------------------------------------------
+input:
+  source_type: hls
+  resolution: [1280, 720]
+  frame_skip: 1
+
+# -----------------------------------------------------------------------------
+# MODELS - What models are available
+# -----------------------------------------------------------------------------
+models:
+  - id: football_od_v2
+    architecture: yolov8
+    weights: s3://spectatr-models/football/od_v2.pt
+    version: "2.1.0"
+    output_type: bbox
+    classes:
+      - model_class: 0
+        name: PERSON
+      - model_class: 1
+        name: BALL
+      - model_class: 2
+        name: GOAL
+    params:
+      confidence: 0.5
+      iou: 0.45
+      half_precision: true
+
+# -----------------------------------------------------------------------------
+# SERVICES - What processing to run
+# -----------------------------------------------------------------------------
+services:
+  # Object Detection service
+  - id: od_main
+    type: object_detection
+    device: cuda:0
+    models:
+      - football_od_v2
+    params: {}
+
+  # Camera View detection (CPU-based, no model)
+  - id: camera_view
+    type: camera_view
+    device: cpu
+    models: []  # No ML model needed
+    params:
+      phash_threshold: 20
+      histogram_threshold: 0.90
+      min_frame_gap: 25
+    # Use lower resolution for camera view
+    input_override:
+      resolution: [640, 480]
+
+# -----------------------------------------------------------------------------
+# OUTPUT - Where to write results
+# -----------------------------------------------------------------------------
+output:
+  primary:
+    type: dynamodb
+    table: inference_results
+  secondary:
+    type: s3
+    bucket: inference-outputs
+  batch_size: 12
+  flush_interval_ms: 250
+
+# Metadata
+version: 1

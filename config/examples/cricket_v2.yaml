@@ -1,0 +1,151 @@
+# =============================================================================
+# Cricket Game Configuration (v2 Schema) - Multi-Model Example
+# =============================================================================
+# Demonstrates:
+# - Multiple models on different GPUs
+# - Model reuse across services
+# - Per-service input overrides
+# - Different output types (bbox, text)
+# =============================================================================
+
+id: cricket
+name: Cricket
+category: ball_sport
+
+# -----------------------------------------------------------------------------
+# INPUT - Default settings for all services
+# -----------------------------------------------------------------------------
+input:
+  source_type: hls
+  resolution: [1920, 1080]
+  frame_skip: 1
+
+# -----------------------------------------------------------------------------
+# MODELS - All available models
+# -----------------------------------------------------------------------------
+models:
+  # Cricket-specific object detection
+  - id: cricket_od_v1
+    architecture: yolov8
+    weights: s3://spectatr-models/cricket/od_v1.pt
+    output_type: bbox
+    classes:
+      - model_class: 0
+        name: BATSMAN
+      - model_class: 1
+        name: BOWLER
+      - model_class: 2
+        name: BALL
+      - model_class: 3
+        name: WICKET
+      - model_class: 4
+        name: UMPIRE
+    params:
+      confidence: 0.5
+      iou: 0.45
+
+  # Person + Head detection (for crowd, fielders)
+  - id: cricket_person_head_v1
+    architecture: yolov8
+    weights: s3://spectatr-models/cricket/person_head_v1.pt
+    output_type: bbox
+    classes:
+      - model_class: 0
+        name: PERSON
+      - model_class: 1
+        name: HEAD
+    params:
+      confidence: 0.4
+      iou: 0.5
+
+  # Generic person detector (COCO pretrained)
+  - id: person_generic
+    architecture: yolov8
+    weights: yolov8n.pt  # Ultralytics will download
+    output_type: bbox
+    classes:
+      - model_class: 0
+        name: PERSON
+        confidence_threshold: 0.6  # Higher threshold for generic
+    params:
+      confidence: 0.5
+
+  # Audio transcription for commentary (example of non-vision model)
+  - id: commentary_whisper
+    architecture: whisper
+    weights: openai/whisper-base
+    output_type: text
+    params:
+      language: en
+      task: transcribe
+
+# -----------------------------------------------------------------------------
+# SERVICES - What to run
+# -----------------------------------------------------------------------------
+services:
+  # Main cricket detection on GPU 0
+  - id: od_cricket
+    type: object_detection
+    device: cuda:0
+    models:
+      - cricket_od_v1
+
+  # Person/Head detection on GPU 1
+  - id: od_person_head
+    type: object_detection
+    device: cuda:1
+    models:
+      - cricket_person_head_v1
+
+  # Generic person detection on GPU 2
+  - id: od_person_generic
+    type: object_detection
+    device: cuda:2
+    models:
+      - person_generic
+
+  # Camera view on CPU (no GPU needed)
+  - id: camera_view
+    type: camera_view
+    device: cpu
+    models: []
+    params:
+      phash_threshold: 20
+      histogram_threshold: 0.90
+      min_frame_gap: 30
+    input_override:
+      resolution: [640, 480]  # Lower res for efficiency
+
+  # Replay detection on CPU
+  - id: replay_detection
+    type: replay_detection
+    device: cpu
+    models: []
+    params:
+      similarity_threshold: 0.95
+      min_replay_duration_frames: 50
+
+  # Commentary transcription (optional, can be disabled)
+  - id: transcription
+    type: transcription
+    enabled: false  # Disabled by default
+    device: cuda:3
+    models:
+      - commentary_whisper
+    params:
+      chunk_duration_sec: 30
+
+# -----------------------------------------------------------------------------
+# OUTPUT
+# -----------------------------------------------------------------------------
+output:
+  primary:
+    type: dynamodb
+    table: inference_results
+  secondary:
+    type: s3
+    bucket: cricket-inference-outputs
+    prefix: masks
+  batch_size: 12
+
+version: 1
