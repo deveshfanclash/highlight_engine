@@ -409,4 +409,14 @@ def print_registry_summary():
 
 
 if __name__ == "__main__":
-    print_registry_summary()
+    # print_registry_summary()
+    # print(get_class_by_name("FOOTBALL"))
+    # print(get_class_by_id(101))
+    # print(get_classes_for_sport("football"))
+    mapping = create_model_to_universal_mapping({38: 'PERSON', 1: 'BALL', 9: 'GOAL'})
+    print(mapping)
+    # print(get_class_by_name(mapping[38]))
+    for key, value in mapping.items():
+        print(f"{key}: {type(value)}")
+    
+

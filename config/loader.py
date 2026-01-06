@@ -89,6 +89,7 @@ class ConfigLoader:
 
         return ConfigLoader._parse_game_config(data)
 
+    # To read from data and convert back to compatible code level config format.
     @staticmethod
     def _parse_game_config(data: Dict[str, Any]) -> GameConfig:
         """Parse raw dict into GameConfig object"""
@@ -204,33 +205,33 @@ class ConfigLoader:
         data.pop('_id', None)
         return self._parse_game_config(data)
 
-    def save_game_config(self, config: GameConfig) -> bool:
-        """
-        Save GameConfig to MongoDB.
+    # def save_game_config(self, config: GameConfig) -> bool:
+    #     """
+    #     Save GameConfig to MongoDB.
 
-        Args:
-            config: GameConfig object to save
+    #     Args:
+    #         config: GameConfig object to save
 
-        Returns:
-            True if successful
-        """
-        if not self.mongo_client:
-            raise ValueError("MongoDB URI not configured")
+    #     Returns:
+    #         True if successful
+    #     """
+    #     if not self.mongo_client:
+    #         raise ValueError("MongoDB URI not configured")
 
-        db = self.mongo_client[self.mongo_db]
-        collection = db['game_configs']
+    #     db = self.mongo_client[self.mongo_db]
+    #     collection = db['game_configs']
 
-        # Convert to dict
-        data = config.model_dump()
+    #     # Convert to dict
+    #     data = config.model_dump()
 
-        # Upsert by game_id
-        result = collection.update_one(
-            {"game_id": config.game_id},
-            {"$set": data},
-            upsert=True
-        )
+    #     # Upsert by game_id
+    #     result = collection.update_one(
+    #         {"game_id": config.game_id},
+    #         {"$set": data},
+    #         upsert=True
+    #     )
 
-        return result.acknowledged
+    #     return result.acknowledged
 
     # =========================================================================
     # MATCH CONFIG OPERATIONS
@@ -275,23 +276,23 @@ class ConfigLoader:
 
         return match_config
 
-    def save_match_config(self, config: MatchConfig) -> bool:
-        """Save MatchConfig to MongoDB"""
-        if not self.mongo_client:
-            raise ValueError("MongoDB URI not configured")
+    # def save_match_config(self, config: MatchConfig) -> bool:
+    #     """Save MatchConfig to MongoDB"""
+    #     if not self.mongo_client:
+    #         raise ValueError("MongoDB URI not configured")
 
-        db = self.mongo_client[self.mongo_db]
-        collection = db['matches']
+    #     db = self.mongo_client[self.mongo_db]
+    #     collection = db['matches']
 
-        data = config.model_dump()
+    #     data = config.model_dump()
 
-        result = collection.update_one(
-            {"match_id": config.match_id},
-            {"$set": data},
-            upsert=True
-        )
+    #     result = collection.update_one(
+    #         {"match_id": config.match_id},
+    #         {"$set": data},
+    #         upsert=True
+    #     )
 
-        return result.acknowledged
+    #     return result.acknowledged
 
     def load_match_config(self, match_id: str) -> Optional[MatchConfig]:
         """Load MatchConfig from MongoDB"""
@@ -313,29 +314,29 @@ class ConfigLoader:
 
         return MatchConfig(**data)
 
-    def update_match_status(
-        self,
-        match_id: str,
-        status: MatchStatus,
-        last_frame: Optional[int] = None
-    ) -> bool:
-        """Update match status"""
-        if not self.mongo_client:
-            raise ValueError("MongoDB URI not configured")
+    # def update_match_status(
+    #     self,
+    #     match_id: str,
+    #     status: MatchStatus,
+    #     last_frame: Optional[int] = None
+    # ) -> bool:
+    #     """Update match status"""
+    #     if not self.mongo_client:
+    #         raise ValueError("MongoDB URI not configured")
 
-        db = self.mongo_client[self.mongo_db]
-        collection = db['matches']
+    #     db = self.mongo_client[self.mongo_db]
+    #     collection = db['matches']
 
-        update_data = {"status": status.value}
-        if last_frame is not None:
-            update_data["last_processed_frame"] = last_frame
+    #     update_data = {"status": status.value}
+    #     if last_frame is not None:
+    #         update_data["last_processed_frame"] = last_frame
 
-        result = collection.update_one(
-            {"match_id": match_id},
-            {"$set": update_data}
-        )
+    #     result = collection.update_one(
+    #         {"match_id": match_id},
+    #         {"$set": update_data}
+    #     )
 
-        return result.modified_count > 0
+    #     return result.modified_count > 0
 
 
 # =============================================================================

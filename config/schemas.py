@@ -759,3 +759,6 @@ def create_default_cricket_config() -> GameConfig:
         #     frame_skip=1,
         # ),
     )
+if __name__ == "__main__":
+    config = create_default_football_config()
+    print(config.model_dump_json(indent=4))
