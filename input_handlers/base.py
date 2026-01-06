@@ -138,13 +138,13 @@ def get_handler_for_pattern(
         ValueError: If no handler supports the pattern
     """
     from input_handlers.frame_handler import FrameInputHandler
+    from input_handlers.audio_handler import AudioInputHandler
     # Future: from input_handlers.clip_handler import ClipInputHandler
-    # Future: from input_handlers.audio_handler import AudioInputHandler
 
     pattern_to_handler = {
         ProcessingPattern.FRAME_BY_FRAME: FrameInputHandler,
+        ProcessingPattern.AUDIO_BASED: AudioInputHandler,
         # ProcessingPattern.CLIP_BASED: ClipInputHandler,
-        # ProcessingPattern.AUDIO_BASED: AudioInputHandler,
     }
 
     handler_class = pattern_to_handler.get(processing_pattern)
