@@ -1,17 +1,35 @@
 """
 Configuration Schemas
 
-Clean, typed configuration for the inference system.
+4-Tier Configuration System:
 
-Structure:
-- enums.py: All enumeration types
-- model.py: Model configurations (independent, supports A/B testing)
-- service.py: Service configurations (typed per service)
-- game.py: Game configurations (references models by ID)
-- output.py: Output schemas for database writes
+Tier 1: Model Registry (model.py)
+    - Pure ML model definitions
+    - No deployment/device info
+    - Versioned for A/B testing
+
+Tier 2: Game Template (game.py)
+    - Sport-specific logic
+    - Model assignments with roles
+    - Service templates (no device info)
+    - Class mappings
+
+Tier 3: Deployment Profile (deployment.py)
+    - Infrastructure configuration
+    - Service → Instance mapping
+    - Batch queues and scaling
+    - Monitoring and cost controls
+
+Tier 4: Match Config (match.py)
+    - Runtime match configuration
+    - References game + deployment
+    - Override mechanism
+    - Status tracking
 """
 
-# Enums
+# =============================================================================
+# ENUMS
+# =============================================================================
 from config.schemas.enums import (
     ModelType,
     ModelArchitecture,
@@ -24,37 +42,83 @@ from config.schemas.enums import (
     OutputFormat,
 )
 
-# Model configs
+# =============================================================================
+# TIER 1: MODEL REGISTRY
+# =============================================================================
 from config.schemas.model import (
     ClassMapping,
     ModelParams,
+    ResourceRequirements,
     ModelConfig,
     ModelRegistryConfig,
 )
 
-# Service configs
-from config.schemas.service import (
-    BaseServiceConfig,
-    ODServiceConfig,
-    CameraViewServiceConfig,
-    SegmentationServiceConfig,
-    ReplayDetectionServiceConfig,
-    EventDetectionServiceConfig,
-    AudioAnalysisServiceConfig,
-    HLSMetadataServiceConfig,
-    create_service_config,
-)
-
-# Game configs
+# =============================================================================
+# TIER 2: GAME TEMPLATE
+# =============================================================================
 from config.schemas.game import (
+    # Model assignment
+    ModelAssignment,
+    # Service templates
+    BaseServiceTemplate,
+    ODServiceTemplate,
+    CameraViewServiceTemplate,
+    SegmentationServiceTemplate,
+    HLSMetadataServiceTemplate,
+    ReplayDetectionServiceTemplate,
+    EventDetectionServiceTemplate,
+    AudioAnalysisServiceTemplate,
+    ServiceTemplateUnion,
+    # Settings
     InferenceSettings,
-    GameConfig,
-    MatchConfig,
-    ServiceConfigUnion,
-    create_service_from_dict,
+    # Main config
+    GameTemplate,
+    # Factory
+    create_service_template_from_dict,
+    create_game_template,
 )
 
-# Output schemas
+# =============================================================================
+# TIER 3: DEPLOYMENT PROFILE
+# =============================================================================
+from config.schemas.deployment import (
+    # Enums
+    Environment,
+    InstanceType,
+    # Instance assignment
+    InstanceAssignment,
+    # Batch config
+    BatchQueueConfig,
+    BatchConfig,
+    # Operational configs
+    ScalingConfig,
+    MonitoringConfig,
+    CostControlConfig,
+    DatabaseConfig,
+    NetworkConfig,
+    # Main config
+    DeploymentProfile,
+    # Factory functions
+    create_development_profile,
+    create_production_profile,
+    create_multi_gpu_profile,
+)
+
+# =============================================================================
+# TIER 4: MATCH CONFIG
+# =============================================================================
+from config.schemas.match import (
+    ResumePosition,
+    ServiceOverride,
+    MatchOverrides,
+    MatchMetadata,
+    MatchConfig,
+    create_match_config,
+)
+
+# =============================================================================
+# OUTPUT SCHEMAS
+# =============================================================================
 from config.schemas.output import (
     BoundingBox,
     Detection,
@@ -63,6 +127,10 @@ from config.schemas.output import (
     HLSMetadataOutput,
 )
 
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
 __all__ = [
     # Enums
     "ModelType",
@@ -74,31 +142,59 @@ __all__ = [
     "GameCategory",
     "MatchStatus",
     "OutputFormat",
-    # Model
+    "Environment",
+    "InstanceType",
+
+    # Tier 1: Model
     "ClassMapping",
     "ModelParams",
+    "ResourceRequirements",
     "ModelConfig",
     "ModelRegistryConfig",
-    # Service
-    "BaseServiceConfig",
-    "ODServiceConfig",
-    "CameraViewServiceConfig",
-    "SegmentationServiceConfig",
-    "ReplayDetectionServiceConfig",
-    "EventDetectionServiceConfig",
-    "AudioAnalysisServiceConfig",
-    "HLSMetadataServiceConfig",
-    "create_service_config",
-    # Game
+
+    # Tier 2: Game
+    "ModelAssignment",
+    "BaseServiceTemplate",
+    "ODServiceTemplate",
+    "CameraViewServiceTemplate",
+    "SegmentationServiceTemplate",
+    "HLSMetadataServiceTemplate",
+    "ReplayDetectionServiceTemplate",
+    "EventDetectionServiceTemplate",
+    "AudioAnalysisServiceTemplate",
+    "ServiceTemplateUnion",
     "InferenceSettings",
-    "GameConfig",
+    "GameTemplate",
+    "create_service_template_from_dict",
+    "create_game_template",
+
+    # Tier 3: Deployment
+    "InstanceAssignment",
+    "BatchQueueConfig",
+    "BatchConfig",
+    "ScalingConfig",
+    "MonitoringConfig",
+    "CostControlConfig",
+    "DatabaseConfig",
+    "NetworkConfig",
+    "DeploymentProfile",
+    "create_development_profile",
+    "create_production_profile",
+    "create_multi_gpu_profile",
+
+    # Tier 4: Match
+    "ResumePosition",
+    "ServiceOverride",
+    "MatchOverrides",
+    "MatchMetadata",
     "MatchConfig",
-    "ServiceConfigUnion",
-    "create_service_from_dict",
+    "create_match_config",
+
     # Output
     "BoundingBox",
     "Detection",
     "InferenceOutput",
     "CameraViewOutput",
     "HLSMetadataOutput",
+
 ]

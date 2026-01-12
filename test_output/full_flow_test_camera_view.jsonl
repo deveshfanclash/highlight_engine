@@ -1,0 +1,2 @@
+{"pk": "full_flow_test#service_status", "sk": "camera_view", "match_id": "full_flow_test", "service_id": "camera_view", "status": "COMPLETED", "frames_processed": 502, "elapsed_seconds": 12.7, "avg_fps": 39.7, "error": null, "ended_at": "2026-01-12T10:30:47.494445Z"}
+{"is_camera_cut": true, "phash_diff": 28, "histogram_correlation": 0.3046, "pk": "full_flow_test#camera_view", "sk": 450, "match_id": "full_flow_test", "service_id": "camera_view", "frame_number": 450, "timestamp_ms": 7507, "processing_time_ms": 2}

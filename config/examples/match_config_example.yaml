@@ -1,0 +1,113 @@
+# =============================================================================
+# MATCH CONFIGURATION (Tier 4)
+# =============================================================================
+# Runtime configuration for a specific match.
+# References GameTemplate (Tier 2) and DeploymentProfile (Tier 3).
+# Contains match-specific overrides and runtime state.
+# =============================================================================
+
+match_id: match_2024_01_15_arsenal_chelsea
+game_id: football_v1
+deployment_profile_id: production
+
+# =============================================================================
+# INPUT CONFIGURATION
+# =============================================================================
+stream_url: https://stream.example.com/live/arsenal_chelsea.m3u8
+stream_type: hls
+
+backup_stream_urls:
+  - https://backup1.example.com/live/arsenal_chelsea.m3u8
+  - https://backup2.example.com/live/arsenal_chelsea.m3u8
+
+# =============================================================================
+# MATCH-SPECIFIC OVERRIDES
+# =============================================================================
+# These take highest priority:
+#   Model defaults (Tier 1) < Game assignment (Tier 2) < Match override (Tier 4)
+# =============================================================================
+overrides:
+  # Override inference settings for this match
+  inference_settings:
+    target_fps: 30  # Higher FPS for this important match
+    frame_skip: 1
+    max_frame_lag_ms: 500  # Stricter lag tolerance
+
+  # Override model parameters for specific models
+  model_params:
+    football_od_v2:
+      confidence_threshold: 0.6  # Higher confidence for cleaner detections
+      iou_threshold: 0.4
+
+    ball_detector_v1:
+      confidence_threshold: 0.8  # Even higher for ball
+      max_detections: 3
+
+  # Override service settings
+  service_overrides:
+    object_detection:
+      enabled: true
+      frame_skip: 1
+      params:
+        target_width: 1920  # Higher resolution for this match
+        target_height: 1080
+
+    segmentation:
+      enabled: true
+      frame_skip: 3  # More frequent segmentation
+
+  # Override instance assignments for this match only
+  # (Overrides DeploymentProfile Tier 3 mappings)
+  instance_overrides:
+    od_primary:
+      instance_type: g4dn.2xlarge  # Bigger GPU for this match
+      memory_mb: 32768
+
+# =============================================================================
+# RUNTIME STATE
+# =============================================================================
+# Managed by the system during match processing.
+# =============================================================================
+status: pending
+
+resume_position:
+  segment_number: 1
+  frame_number: 0
+  timestamp_ms: 0
+
+retry_count: 0
+
+# =============================================================================
+# MATCH METADATA
+# =============================================================================
+# For logging, analytics, and filtering.
+# =============================================================================
+metadata:
+  league: Premier League
+  tournament_id: pl_2024
+  tournament_name: Premier League 2024/25
+  season: "2024-25"
+
+  home_team: Arsenal
+  away_team: Chelsea
+  teams:
+    - Arsenal
+    - Chelsea
+
+  scheduled_start: "2024-01-15T15:00:00Z"
+  scheduled_end: "2024-01-15T17:00:00Z"
+
+  broadcaster: Sky Sports
+  stream_quality: 1080p
+
+  extra:
+    matchday: 22
+    venue: Emirates Stadium
+    referee: Michael Oliver
+    importance: high
+
+tags:
+  - premier_league
+  - london_derby
+  - high_priority
+  - live

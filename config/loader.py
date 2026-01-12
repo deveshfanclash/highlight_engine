@@ -1,72 +1,122 @@
 """
 Configuration Loader
 
-Loads game and model configurations from:
-- MongoDB (production)
-- YAML files (development/testing)
-- Environment variables (overrides)
+4-Tier Configuration System:
+- Tier 1: ModelRegistry - Pure ML model definitions
+- Tier 2: GameTemplate - Sport-specific logic
+- Tier 3: DeploymentProfile - Infrastructure configuration
+- Tier 4: MatchConfig - Runtime match configuration
 
-New Structure:
-- GameConfig: References model_ids (not embedding models)
-- ModelRegistryConfig: Independent model definitions
-- Typed service configs per service type
+Supports loading from:
+- YAML files (development/testing)
+- MongoDB (production)
+- Environment variables (overrides)
 """
 
 import os
 import yaml
+import logging
 from typing import Optional, Dict, Any, List, Tuple
 from pathlib import Path
 
-from config.schemas import (
-    # Enums
+from config.schemas.enums import (
     ModelType,
     ModelArchitecture,
-    ServiceType,
     GameCategory,
     MatchStatus,
     InputType,
     OutputFormat,
-    # Model
+)
+from config.schemas.model import (
     ClassMapping,
     ModelParams,
+    ResourceRequirements,
     ModelConfig,
     ModelRegistryConfig,
-    # Service
-    ODServiceConfig,
-    CameraViewServiceConfig,
-    SegmentationServiceConfig,
-    ReplayDetectionServiceConfig,
-    EventDetectionServiceConfig,
-    AudioAnalysisServiceConfig,
-    HLSMetadataServiceConfig,
-    create_service_from_dict,
-    # Game
-    InferenceSettings,
-    GameConfig,
-    MatchConfig,
 )
+from config.schemas.game import (
+    ModelAssignment,
+    InferenceSettings,
+    GameTemplate,
+    ServiceTemplateUnion,
+    create_service_template_from_dict,
+)
+from config.schemas.deployment import (
+    DeploymentProfile,
+    InstanceAssignment,
+    BatchConfig,
+    MonitoringConfig,
+    create_development_profile,
+    create_production_profile,
+    create_multi_gpu_profile,
+)
+from config.schemas.match import (
+    MatchConfig,
+    MatchOverrides,
+    MatchMetadata,
+    ResumePosition,
+    create_match_config,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigLoader:
     """
-    Unified configuration loader supporting multiple sources.
+    Unified configuration loader for the 4-tier system.
 
-    New structure separates:
-    - GameConfig: What services to run, references model_ids
-    - ModelRegistryConfig: Independent model definitions
+    Supports:
+    - YAML files for development/testing
+    - MongoDB for production
+    - Environment variable overrides
+    - Caching for performance
+
+    Usage:
+        # Development (YAML)
+        loader = ConfigLoader()
+        game, models = loader.load_from_yaml("config/games/football.yaml")
+        deployment = loader.load_deployment_from_yaml("config/deployments/production.yaml")
+
+        # Production (MongoDB)
+        loader = ConfigLoader(mongo_uri="mongodb://...")
+        game = loader.load_game_template("football")
+        deployment = loader.load_deployment_profile("production")
+        models = loader.load_models_for_game(game)
+
+        # Create match
+        match = loader.create_match(
+            match_id="match_123",
+            stream_url="https://...",
+            game_id="football",
+            deployment_profile_id="production",
+            overrides={"inference_settings": {"frame_skip": 2}}
+        )
     """
 
-    def __init__(self, mongo_uri: Optional[str] = None, mongo_db: str = "inference_db"):
+    def __init__(
+        self,
+        mongo_uri: Optional[str] = None,
+        mongo_db: str = "inference_config",
+        cache_enabled: bool = True,
+    ):
         """
         Initialize config loader.
 
         Args:
             mongo_uri: MongoDB connection URI (if None, only YAML loading works)
             mongo_db: MongoDB database name
+            cache_enabled: Enable config caching
         """
         self.mongo_uri = mongo_uri
         self.mongo_db = mongo_db
+        self.cache_enabled = cache_enabled
+
         self._mongo_client = None
+        self._cache: Dict[str, Any] = {}
+
+    # =========================================================================
+    # MONGODB CLIENT
+    # =========================================================================
 
     @property
     def mongo_client(self):
@@ -79,24 +129,294 @@ class ConfigLoader:
                 raise ImportError("pymongo is required for MongoDB support")
         return self._mongo_client
 
+    def _get_collection(self, collection_name: str):
+        """Get MongoDB collection"""
+        if not self.mongo_client:
+            raise ValueError("MongoDB URI not configured")
+        return self.mongo_client[self.mongo_db][collection_name]
+
     # =========================================================================
-    # YAML LOADING (Development)
+    # TIER 1: MODEL REGISTRY
     # =========================================================================
 
     @staticmethod
-    def load_from_yaml(yaml_path: str) -> Tuple[GameConfig, ModelRegistryConfig]:
-        """
-        Load GameConfig and ModelRegistryConfig from a YAML file.
+    def _parse_model_config(data: Dict[str, Any]) -> ModelConfig:
+        """Parse a single model config from dict"""
+        # Parse class mappings
+        class_mappings = []
+        for cm in data.get("default_class_mapping", []):
+            if isinstance(cm, dict):
+                class_mappings.append(ClassMapping(**cm))
 
-        The YAML file should have two top-level keys:
-        - game: GameConfig data
-        - models: List of ModelConfig data
+        # Parse params
+        params_data = data.get("default_params", {})
+        params = ModelParams(**params_data) if params_data else ModelParams()
+
+        # Parse resources
+        resources_data = data.get("resources", {})
+        resources = ResourceRequirements(**resources_data) if resources_data else ResourceRequirements()
+
+        return ModelConfig(
+            model_id=data["model_id"],
+            model_name=data.get("model_name", ""),
+            description=data.get("description", ""),
+            model_type=ModelType(data["model_type"]),
+            model_architecture=ModelArchitecture(
+                data.get("model_architecture", "yolov8")
+            ),
+            model_url=data["model_url"],
+            version=data.get("version", "latest"),
+            checksum=data.get("checksum"),
+            native_classes=data.get("native_classes", []),
+            native_class_ids=data.get("native_class_ids", []),
+            default_class_mapping=class_mappings,
+            default_params=params,
+            resources=resources,
+            output_format=OutputFormat(data.get("output_format", "bbox")),
+            tags=data.get("tags", []),
+        )
+
+    @staticmethod
+    def _parse_model_registry(models_data: List[Dict[str, Any]]) -> ModelRegistryConfig:
+        """Parse model list into ModelRegistryConfig"""
+        models = [ConfigLoader._parse_model_config(m) for m in models_data]
+        return ModelRegistryConfig(models=models)
+
+    def load_model_registry_from_yaml(self, yaml_path: str) -> ModelRegistryConfig:
+        """Load model registry from YAML file"""
+        with open(yaml_path, 'r') as f:
+            data = yaml.safe_load(f)
+
+        models_data = data.get("models", [data] if "model_id" in data else [])
+        return self._parse_model_registry(models_data)
+
+    def load_model_registry(self, game_id: Optional[str] = None) -> ModelRegistryConfig:
+        """Load model registry from MongoDB"""
+        collection = self._get_collection("models")
+
+        query = {}
+        if game_id:
+            # Get model IDs from game template first
+            game = self.load_game_template(game_id)
+            if game:
+                model_ids = game.get_model_ids()
+                query = {"model_id": {"$in": model_ids}}
+
+        models_data = list(collection.find(query))
+        for m in models_data:
+            m.pop("_id", None)
+
+        return self._parse_model_registry(models_data)
+
+    # =========================================================================
+    # TIER 2: GAME TEMPLATE
+    # =========================================================================
+
+    @staticmethod
+    def _parse_game_template(data: Dict[str, Any]) -> GameTemplate:
+        """Parse game template from dict"""
+        # Get game data (might be nested under 'game' key)
+        game_data = data.get("game", data)
+
+        # Parse model assignments
+        model_assignments = []
+        for ma in game_data.get("model_assignments", []):
+            model_assignments.append(ModelAssignment(**ma))
+
+        # Parse services
+        services = []
+        for service_data in game_data.get("services", []):
+            service = create_service_template_from_dict(service_data)
+            services.append(service)
+
+        # Parse inference settings
+        inference_data = game_data.get("inference_settings", {})
+        inference_settings = InferenceSettings(**inference_data)
+
+        return GameTemplate(
+            game_id=game_data["game_id"],
+            game_name=game_data["game_name"],
+            game_category=GameCategory(game_data.get("game_category", "ball_sport")),
+            description=game_data.get("description", ""),
+            model_assignments=model_assignments,
+            services=services,
+            inference_settings=inference_settings,
+            universal_class_definitions=game_data.get("universal_class_definitions", {}),
+            config_version=game_data.get("config_version", 1),
+            tags=game_data.get("tags", []),
+        )
+
+    def load_game_template_from_yaml(self, yaml_path: str) -> GameTemplate:
+        """Load game template from YAML file"""
+        with open(yaml_path, 'r') as f:
+            data = yaml.safe_load(f)
+        return self._parse_game_template(data)
+
+    def load_game_template(self, game_id: str) -> Optional[GameTemplate]:
+        """Load game template from MongoDB"""
+        cache_key = f"game:{game_id}"
+        if self.cache_enabled and cache_key in self._cache:
+            return self._cache[cache_key]
+
+        collection = self._get_collection("game_templates")
+        data = collection.find_one({"game_id": game_id})
+
+        if not data:
+            return None
+
+        data.pop("_id", None)
+        game = self._parse_game_template(data)
+
+        if self.cache_enabled:
+            self._cache[cache_key] = game
+
+        return game
+
+    # =========================================================================
+    # TIER 3: DEPLOYMENT PROFILE
+    # =========================================================================
+
+    @staticmethod
+    def _parse_deployment_profile(data: Dict[str, Any]) -> DeploymentProfile:
+        """Parse deployment profile from dict"""
+        # Parse instance assignments
+        instance_assignments = []
+        for ia in data.get("instance_assignments", []):
+            instance_assignments.append(InstanceAssignment(**ia))
+
+        # Parse batch config
+        batch_data = data.get("batch", {})
+        batch_config = BatchConfig(**batch_data) if batch_data else BatchConfig()
+
+        return DeploymentProfile(
+            profile_id=data["profile_id"],
+            profile_name=data.get("profile_name", ""),
+            description=data.get("description", ""),
+            environment=data.get("environment", "production"),
+            instance_assignments=instance_assignments,
+            batch=batch_config,
+            hls_metadata_head_start_seconds=data.get("hls_metadata_head_start_seconds", 30),
+            # Other configs will use defaults if not specified
+        )
+
+    def load_deployment_profile_from_yaml(self, yaml_path: str) -> DeploymentProfile:
+        """Load deployment profile from YAML file"""
+        with open(yaml_path, 'r') as f:
+            data = yaml.safe_load(f)
+        return self._parse_deployment_profile(data)
+
+    def load_deployment_profile(self, profile_id: str) -> Optional[DeploymentProfile]:
+        """Load deployment profile from MongoDB or defaults"""
+        cache_key = f"deployment:{profile_id}"
+        if self.cache_enabled and cache_key in self._cache:
+            return self._cache[cache_key]
+
+        # Check for built-in profiles first
+        if profile_id == "development":
+            return create_development_profile()
+        elif profile_id == "production":
+            return create_production_profile()
+        elif profile_id == "production_multi_gpu":
+            return create_multi_gpu_profile()
+
+        # Try MongoDB
+        if self.mongo_client:
+            collection = self._get_collection("deployment_profiles")
+            data = collection.find_one({"profile_id": profile_id})
+
+            if data:
+                data.pop("_id", None)
+                profile = self._parse_deployment_profile(data)
+
+                if self.cache_enabled:
+                    self._cache[cache_key] = profile
+
+                return profile
+
+        return None
+
+    # =========================================================================
+    # TIER 4: MATCH CONFIG
+    # =========================================================================
+
+    def create_match(
+        self,
+        match_id: str,
+        stream_url: str,
+        game_id: str,
+        deployment_profile_id: str = "production",
+        stream_type: str = "hls",
+        overrides: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        save_to_db: bool = False,
+    ) -> MatchConfig:
+        """
+        Create a new match configuration.
 
         Args:
-            yaml_path: Path to YAML config file
+            match_id: Unique match identifier
+            stream_url: Stream URL
+            game_id: Reference to game template
+            deployment_profile_id: Reference to deployment profile
+            stream_type: Type of stream (hls, rtsp, mp4)
+            overrides: Match-specific overrides
+            metadata: Match metadata
+            save_to_db: Save to MongoDB if True
 
         Returns:
-            Tuple of (GameConfig, ModelRegistryConfig)
+            MatchConfig instance
+        """
+        match = create_match_config(
+            match_id=match_id,
+            stream_url=stream_url,
+            game_id=game_id,
+            deployment_profile_id=deployment_profile_id,
+            stream_type=InputType(stream_type),
+            overrides=overrides,
+            metadata=metadata,
+        )
+
+        if save_to_db and self.mongo_client:
+            collection = self._get_collection("matches")
+            collection.insert_one(match.model_dump(mode="json"))
+
+        return match
+
+    def load_match(self, match_id: str) -> Optional[MatchConfig]:
+        """Load match config from MongoDB"""
+        if not self.mongo_client:
+            return None
+
+        collection = self._get_collection("matches")
+        data = collection.find_one({"match_id": match_id})
+
+        if not data:
+            return None
+
+        data.pop("_id", None)
+        return MatchConfig(**data)
+
+    # =========================================================================
+    # COMBINED LOADING (Convenience methods)
+    # =========================================================================
+
+    @staticmethod
+    def load_from_yaml(yaml_path: str) -> Tuple[GameTemplate, ModelRegistryConfig]:
+        """
+        Load GameTemplate and ModelRegistry from a combined YAML file.
+
+        Expects format:
+        ```yaml
+        models:
+          - model_id: ...
+        game_id: ...
+        game_name: ...
+        services:
+          - ...
+        ```
+
+        Returns:
+            Tuple of (GameTemplate, ModelRegistryConfig)
         """
         path = Path(yaml_path)
         if not path.exists():
@@ -105,250 +425,58 @@ class ConfigLoader:
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
 
-        # Parse models first (they're independent)
-        model_registry = ConfigLoader._parse_model_registry(data.get('models', []))
+        # Parse models
+        model_registry = ConfigLoader._parse_model_registry(data.get("models", []))
 
-        # Parse game config (references model_ids)
-        game_config = ConfigLoader._parse_game_config(data)
+        # Parse game template
+        game_template = ConfigLoader._parse_game_template(data)
 
-        return game_config, model_registry
+        return game_template, model_registry
 
-    @staticmethod
-    def load_game_from_yaml(yaml_path: str) -> GameConfig:
-        """Load only GameConfig from YAML (backward compatibility)"""
-        game_config, _ = ConfigLoader.load_from_yaml(yaml_path)
-        return game_config
-
-    @staticmethod
-    def _parse_model_registry(models_data: List[Dict[str, Any]]) -> ModelRegistryConfig:
-        """Parse model list into ModelRegistryConfig"""
-        models = []
-
-        for model_data in models_data:
-            # Parse class mapping
-            class_mapping = []
-            for cm in model_data.get('class_mapping', []):
-                if isinstance(cm, dict):
-                    class_mapping.append(ClassMapping(
-                        model_class_id=cm['model_class_id'],
-                        universal_class_name=cm['universal_class_name'],
-                        confidence_threshold=cm.get('confidence_threshold'),
-                    ))
-
-            # Parse params
-            params_data = model_data.get('params', {})
-            params = ModelParams(
-                confidence_threshold=params_data.get('confidence_threshold', 0.5),
-                iou_threshold=params_data.get('iou_threshold', 0.45),
-                max_detections=params_data.get('max_detections', 100),
-                batch_size=params_data.get('batch_size', 1),
-                input_size=params_data.get('input_size'),
-                half_precision=params_data.get('half_precision', False),
-                extra=params_data.get('extra', {}),
-            )
-
-            models.append(ModelConfig(
-                model_id=model_data['model_id'],
-                model_name=model_data.get('model_name', ''),
-                model_type=ModelType(model_data['model_type']),
-                model_architecture=ModelArchitecture(
-                    model_data.get('model_architecture', 'yolov8')
-                ),
-                model_url=model_data['model_url'],
-                version=model_data.get('version', 'latest'),
-                classes_to_predict=model_data.get('classes_to_predict', []),
-                class_mapping=class_mapping,
-                params=params,
-                output_format=OutputFormat(model_data.get('output_format', 'bbox')),
-                preferred_device=model_data.get('preferred_device', 'gpu'),
-            ))
-
-        return ModelRegistryConfig(models=models)
-
-    @staticmethod
-    def _parse_game_config(data: Dict[str, Any]) -> GameConfig:
-        """Parse raw dict into GameConfig object"""
-        # Get game data (might be nested under 'game' key or at root)
-        game_data = data.get('game', data)
-
-        # Extract model_ids from services or models list
-        model_ids = game_data.get('model_ids', [])
-
-        # If model_ids not provided, extract from models list (legacy support)
-        if not model_ids and 'models' in data:
-            model_ids = [m.get('model_id') for m in data['models'] if m.get('model_id')]
-
-        # Parse services
-        services = []
-        for service_data in game_data.get('services', []):
-            service = create_service_from_dict(service_data)
-            services.append(service)
-
-        # Parse inference settings
-        inference_data = game_data.get('inference_settings', {})
-        inference_settings = InferenceSettings(
-            target_fps=inference_data.get('target_fps', 25),
-            frame_skip=inference_data.get('frame_skip', 1),
-            processing_resolution=inference_data.get('processing_resolution', [1280, 720]),
-            stream_buffer_size=inference_data.get('stream_buffer_size', 30),
-        )
-
-        return GameConfig(
-            game_id=game_data['game_id'],
-            game_name=game_data['game_name'],
-            game_category=GameCategory(game_data.get('game_category', 'ball_sport')),
-            model_ids=model_ids,
-            services=services,
-            inference_settings=inference_settings,
-            config_version=game_data.get('config_version', 1),
-        )
-
-    # =========================================================================
-    # MONGODB LOADING (Production)
-    # =========================================================================
-
-    def load_game_config(self, game_id: str) -> Optional[GameConfig]:
-        """
-        Load GameConfig from MongoDB by game_id.
-
-        Args:
-            game_id: Game identifier
-
-        Returns:
-            GameConfig object or None if not found
-        """
-        if not self.mongo_client:
-            raise ValueError("MongoDB URI not configured")
-
-        db = self.mongo_client[self.mongo_db]
-        collection = db['game_configs']
-
-        data = collection.find_one({"game_id": game_id})
-        if not data:
-            return None
-
-        # Remove MongoDB's _id field
-        data.pop('_id', None)
-
-        return self._parse_game_config(data)
-
-    def load_model_registry(self, game_id: Optional[str] = None) -> ModelRegistryConfig:
-        """
-        Load ModelRegistryConfig from MongoDB.
-
-        Args:
-            game_id: If provided, only load models for this game
-
-        Returns:
-            ModelRegistryConfig with all relevant models
-        """
-        if not self.mongo_client:
-            raise ValueError("MongoDB URI not configured")
-
-        db = self.mongo_client[self.mongo_db]
-        collection = db['models']
-
-        # Query based on game_id if provided
-        query = {}
-        if game_id:
-            # First get game config to find model_ids
-            game_config = self.load_game_config(game_id)
-            if game_config and game_config.model_ids:
-                query = {"model_id": {"$in": game_config.model_ids}}
-
-        models_data = list(collection.find(query))
-
-        # Remove MongoDB _id fields
-        for model in models_data:
-            model.pop('_id', None)
-
-        return self._parse_model_registry(models_data)
-
-    def load_game_with_models(
+    def load_full_config(
         self,
-        game_id: str
-    ) -> Tuple[Optional[GameConfig], ModelRegistryConfig]:
-        """
-        Load both GameConfig and its associated models.
-
-        Args:
-            game_id: Game identifier
-
-        Returns:
-            Tuple of (GameConfig, ModelRegistryConfig)
-        """
-        game_config = self.load_game_config(game_id)
-        model_registry = self.load_model_registry(game_id)
-        return game_config, model_registry
-
-    # =========================================================================
-    # MATCH CONFIG OPERATIONS
-    # =========================================================================
-
-    def create_match_config(
-        self,
-        match_id: str,
         game_id: str,
-        stream_url: str,
-        stream_type: str = "hls",
-        **kwargs
-    ) -> MatchConfig:
+        deployment_profile_id: str = "production",
+    ) -> Tuple[GameTemplate, ModelRegistryConfig, DeploymentProfile]:
         """
-        Create a new match config.
-
-        Args:
-            match_id: Unique match identifier
-            game_id: Game ID to reference
-            stream_url: Stream URL for this match
-            stream_type: Type of stream (hls, rtsp, mp4)
-            **kwargs: Additional match metadata (league, tournament, etc.)
+        Load all three config tiers for a game.
 
         Returns:
-            MatchConfig instance
+            Tuple of (GameTemplate, ModelRegistryConfig, DeploymentProfile)
         """
-        match_config = MatchConfig(
-            match_id=match_id,
-            game_id=game_id,
-            stream_url=stream_url,
-            stream_type=InputType(stream_type),
-            status=MatchStatus.PENDING,
-            **kwargs
-        )
+        game = self.load_game_template(game_id)
+        if not game:
+            raise ValueError(f"Game template not found: {game_id}")
 
-        return match_config
+        models = self.load_model_registry(game_id)
+        deployment = self.load_deployment_profile(deployment_profile_id)
+        if not deployment:
+            deployment = create_production_profile()
 
-    def load_match_config(self, match_id: str) -> Optional[MatchConfig]:
-        """Load MatchConfig from MongoDB"""
-        if not self.mongo_client:
-            raise ValueError("MongoDB URI not configured")
-
-        db = self.mongo_client[self.mongo_db]
-        collection = db['matches']
-
-        data = collection.find_one({"match_id": match_id})
-        if not data:
-            return None
-
-        data.pop('_id', None)
-
-        return MatchConfig(**data)
+        return game, models, deployment
 
 
 # =============================================================================
 # CONVENIENCE FUNCTIONS
 # =============================================================================
 
-def load_config_from_yaml(yaml_path: str) -> Tuple[GameConfig, ModelRegistryConfig]:
-    """Convenience function to load config from YAML"""
+def load_config_from_yaml(yaml_path: str) -> Tuple[GameTemplate, ModelRegistryConfig]:
+    """Load game template and models from a combined YAML file"""
     return ConfigLoader.load_from_yaml(yaml_path)
 
 
-def load_game_from_yaml(yaml_path: str) -> GameConfig:
-    """Convenience function to load only game config from YAML"""
-    return ConfigLoader.load_game_from_yaml(yaml_path)
+def load_game_from_yaml(yaml_path: str) -> GameTemplate:
+    """Load only game template from YAML"""
+    game, _ = ConfigLoader.load_from_yaml(yaml_path)
+    return game
 
 
-def load_config_from_env() -> Optional[Tuple[GameConfig, ModelRegistryConfig]]:
+def load_deployment_from_yaml(yaml_path: str) -> DeploymentProfile:
+    """Load deployment profile from YAML"""
+    return ConfigLoader().load_deployment_profile_from_yaml(yaml_path)
+
+
+def load_config_from_env() -> Optional[Tuple[GameTemplate, ModelRegistryConfig]]:
     """
     Load config based on environment variables.
 
@@ -358,21 +486,23 @@ def load_config_from_env() -> Optional[Tuple[GameConfig, ModelRegistryConfig]]:
     - MONGO_URI: MongoDB URI (if mongodb)
     - GAME_ID: Game ID to load
     """
-    source = os.getenv('CONFIG_SOURCE', 'yaml')
+    source = os.getenv("CONFIG_SOURCE", "yaml")
 
-    if source == 'yaml':
-        path = os.getenv('CONFIG_PATH')
+    if source == "yaml":
+        path = os.getenv("CONFIG_PATH")
         if not path:
             raise ValueError("CONFIG_PATH env var required for yaml source")
         return ConfigLoader.load_from_yaml(path)
 
-    elif source == 'mongodb':
-        mongo_uri = os.getenv('MONGO_URI')
-        game_id = os.getenv('GAME_ID')
+    elif source == "mongodb":
+        mongo_uri = os.getenv("MONGO_URI")
+        game_id = os.getenv("GAME_ID")
         if not mongo_uri or not game_id:
             raise ValueError("MONGO_URI and GAME_ID env vars required for mongodb source")
         loader = ConfigLoader(mongo_uri=mongo_uri)
-        return loader.load_game_with_models(game_id)
+        game = loader.load_game_template(game_id)
+        models = loader.load_model_registry(game_id)
+        return game, models
 
     else:
         raise ValueError(f"Unknown CONFIG_SOURCE: {source}")
@@ -386,6 +516,8 @@ if __name__ == "__main__":
     import sys
     import json
 
+    logging.basicConfig(level=logging.INFO)
+
     if len(sys.argv) < 2:
         print("Usage: python -m config.loader <yaml_path>")
         sys.exit(1)
@@ -393,24 +525,31 @@ if __name__ == "__main__":
     yaml_path = sys.argv[1]
 
     try:
-        game_config, model_registry = ConfigLoader.load_from_yaml(yaml_path)
+        game_template, model_registry = ConfigLoader.load_from_yaml(yaml_path)
+
         print("=" * 60)
-        print(f"Loaded config for: {game_config.game_name}")
+        print(f"Loaded: {game_template.game_name}")
         print("=" * 60)
-        print(f"Game ID: {game_config.game_id}")
-        print(f"Category: {game_config.game_category}")
-        print(f"Model IDs: {game_config.model_ids}")
+
+        print(f"\nGame ID: {game_template.game_id}")
+        print(f"Category: {game_template.game_category}")
+
+        print(f"\nModel Assignments: {len(game_template.model_assignments)}")
+        for ma in game_template.model_assignments:
+            print(f"  - {ma.model_id} (role: {ma.role})")
+
         print(f"\nModels in Registry: {len(model_registry.models)}")
         for model in model_registry.models:
             print(f"  - {model.model_id} ({model.model_type})")
-            classes = [cm.universal_class_name for cm in model.class_mapping]
-            print(f"    Classes: {classes}")
-        print(f"\nServices: {len(game_config.services)}")
-        for service in game_config.services:
-            print(f"  - {service.service_type} (enabled={service.enabled}, device={service.device})")
+            print(f"    URL: {model.model_url}")
+            print(f"    Requires GPU: {model.resources.requires_gpu}")
+
+        print(f"\nServices: {len(game_template.services)}")
+        for service in game_template.services:
+            print(f"  - {service.service_type} (enabled={service.enabled})")
+
         print("=" * 60)
-        print("\nGame Config JSON:")
-        print(json.dumps(game_config.model_dump(), indent=2, default=str))
+
     except Exception as e:
         print(f"Error loading config: {e}")
         import traceback

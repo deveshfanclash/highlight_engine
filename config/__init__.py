@@ -1,19 +1,19 @@
 """
 Configuration Module
 
-Provides configuration schemas and utilities for the inference system.
+4-Tier Configuration System:
+- Tier 1: Model Registry (model.py) - Pure ML model definitions
+- Tier 2: Game Template (game.py) - Sport-specific logic
+- Tier 3: Deployment Profile (deployment.py) - Infrastructure configuration
+- Tier 4: Match Config (match.py) - Runtime match configuration
 
-New Structure:
+Structure:
 - config/schemas/ - Modular schema definitions
-  - enums.py - All enumeration types
-  - model.py - Model configurations (independent, A/B testing support)
-  - service.py - Service configurations (typed per service)
-  - game.py - Game configurations (references model_ids)
-  - output.py - Output schemas for database writes
 - config/loader.py - Load configs from YAML or MongoDB
+- config/class_registry.py - Universal class definitions
 """
 
-# Import from new schemas module
+# Import from schemas module
 from config.schemas import (
     # Enums
     ModelType,
@@ -25,30 +25,53 @@ from config.schemas import (
     GameCategory,
     MatchStatus,
     OutputFormat,
+    Environment,
+    InstanceType,
 
-    # Model Config
+    # Tier 1: Model
     ClassMapping,
     ModelParams,
+    ResourceRequirements,
     ModelConfig,
     ModelRegistryConfig,
 
-    # Service Configs (typed per service)
-    BaseServiceConfig,
-    ODServiceConfig,
-    CameraViewServiceConfig,
-    SegmentationServiceConfig,
-    ReplayDetectionServiceConfig,
-    EventDetectionServiceConfig,
-    AudioAnalysisServiceConfig,
-    HLSMetadataServiceConfig,
-    create_service_config,
-
-    # Game Config
+    # Tier 2: Game Template
+    ModelAssignment,
+    BaseServiceTemplate,
+    ODServiceTemplate,
+    CameraViewServiceTemplate,
+    SegmentationServiceTemplate,
+    HLSMetadataServiceTemplate,
+    ReplayDetectionServiceTemplate,
+    EventDetectionServiceTemplate,
+    AudioAnalysisServiceTemplate,
+    ServiceTemplateUnion,
     InferenceSettings,
-    GameConfig,
+    GameTemplate,
+    create_service_template_from_dict,
+    create_game_template,
+
+    # Tier 3: Deployment
+    InstanceAssignment,
+    BatchQueueConfig,
+    BatchConfig,
+    ScalingConfig,
+    MonitoringConfig,
+    CostControlConfig,
+    DatabaseConfig,
+    NetworkConfig,
+    DeploymentProfile,
+    create_development_profile,
+    create_production_profile,
+    create_multi_gpu_profile,
+
+    # Tier 4: Match
+    ResumePosition,
+    ServiceOverride,
+    MatchOverrides,
+    MatchMetadata,
     MatchConfig,
-    ServiceConfigUnion,
-    create_service_from_dict,
+    create_match_config,
 
     # Output Schemas
     BoundingBox,
@@ -82,30 +105,53 @@ __all__ = [
     "GameCategory",
     "MatchStatus",
     "OutputFormat",
+    "Environment",
+    "InstanceType",
 
-    # Model Config
+    # Tier 1: Model
     "ClassMapping",
     "ModelParams",
+    "ResourceRequirements",
     "ModelConfig",
     "ModelRegistryConfig",
 
-    # Service Configs
-    "BaseServiceConfig",
-    "ODServiceConfig",
-    "CameraViewServiceConfig",
-    "SegmentationServiceConfig",
-    "ReplayDetectionServiceConfig",
-    "EventDetectionServiceConfig",
-    "AudioAnalysisServiceConfig",
-    "HLSMetadataServiceConfig",
-    "create_service_config",
-
-    # Game Config
+    # Tier 2: Game Template
+    "ModelAssignment",
+    "BaseServiceTemplate",
+    "ODServiceTemplate",
+    "CameraViewServiceTemplate",
+    "SegmentationServiceTemplate",
+    "HLSMetadataServiceTemplate",
+    "ReplayDetectionServiceTemplate",
+    "EventDetectionServiceTemplate",
+    "AudioAnalysisServiceTemplate",
+    "ServiceTemplateUnion",
     "InferenceSettings",
-    "GameConfig",
+    "GameTemplate",
+    "create_service_template_from_dict",
+    "create_game_template",
+
+    # Tier 3: Deployment
+    "InstanceAssignment",
+    "BatchQueueConfig",
+    "BatchConfig",
+    "ScalingConfig",
+    "MonitoringConfig",
+    "CostControlConfig",
+    "DatabaseConfig",
+    "NetworkConfig",
+    "DeploymentProfile",
+    "create_development_profile",
+    "create_production_profile",
+    "create_multi_gpu_profile",
+
+    # Tier 4: Match
+    "ResumePosition",
+    "ServiceOverride",
+    "MatchOverrides",
+    "MatchMetadata",
     "MatchConfig",
-    "ServiceConfigUnion",
-    "create_service_from_dict",
+    "create_match_config",
 
     # Output Schemas
     "BoundingBox",

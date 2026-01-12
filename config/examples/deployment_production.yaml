@@ -1,0 +1,148 @@
+# =============================================================================
+# PRODUCTION DEPLOYMENT PROFILE
+# =============================================================================
+# Standard production deployment with GPU and CPU queues.
+# Suitable for most inference workloads.
+# =============================================================================
+
+profile_id: production
+profile_name: Production
+description: Standard production deployment with GPU/CPU separation
+environment: production
+
+# =============================================================================
+# INSTANCE ASSIGNMENTS
+# =============================================================================
+# Maps service patterns to specific infrastructure.
+# Higher priority patterns are matched first.
+# =============================================================================
+instance_assignments:
+  # HLS Metadata - lightweight CPU task
+  - service_pattern: "hls_metadata"
+    queue: inference-cpu-queue
+    instance_type: c5.large
+    vcpus: 2
+    memory_mb: 4096
+    gpu_count: 0
+    priority: 10
+
+  # Camera View - CPU intensive but no GPU needed
+  - service_pattern: "camera_view"
+    queue: inference-cpu-queue
+    instance_type: c5.xlarge
+    vcpus: 4
+    memory_mb: 8192
+    gpu_count: 0
+    priority: 10
+
+  # Object Detection services - GPU required
+  - service_pattern: "od_*"
+    queue: inference-gpu-queue
+    instance_type: g4dn.xlarge
+    vcpus: 4
+    memory_mb: 16384
+    gpu_count: 1
+    priority: 5
+
+  # Segmentation services - larger GPU for masks
+  - service_pattern: "seg_*"
+    queue: inference-gpu-queue
+    instance_type: g4dn.2xlarge
+    vcpus: 8
+    memory_mb: 32768
+    gpu_count: 1
+    priority: 5
+
+  # Pose estimation - GPU required
+  - service_pattern: "pose_*"
+    queue: inference-gpu-queue
+    instance_type: g4dn.xlarge
+    vcpus: 4
+    memory_mb: 16384
+    gpu_count: 1
+    priority: 5
+
+  # Default fallback - CPU
+  - service_pattern: "*"
+    queue: inference-cpu-queue
+    instance_type: c5.large
+    vcpus: 2
+    memory_mb: 4096
+    gpu_count: 0
+    priority: 0
+
+# =============================================================================
+# AWS BATCH CONFIGURATION
+# =============================================================================
+batch:
+  default_cpu_queue: inference-cpu-queue
+  default_gpu_queue: inference-gpu-queue
+
+  queues:
+    - queue_name: inference-cpu-queue
+      compute_environment: inference-cpu-env
+      priority: 1
+      is_gpu: false
+
+    - queue_name: inference-gpu-queue
+      compute_environment: inference-gpu-env
+      priority: 1
+      is_gpu: true
+
+  job_definitions:
+    hls_metadata: hls-metadata-service
+    camera_view: camera-view-service
+    object_detection: od-service
+    segmentation: segmentation-service
+    pose_estimation: pose-service
+
+# =============================================================================
+# SCALING CONFIGURATION
+# =============================================================================
+scaling:
+  min_vcpus: 0
+  max_vcpus: 256
+  desired_vcpus: 0
+  use_spot_instances: true
+  spot_bid_percentage: 80
+  scale_down_delay_seconds: 300
+
+# =============================================================================
+# MONITORING CONFIGURATION
+# =============================================================================
+monitoring:
+  heartbeat_timeout_seconds: 300
+  job_timeout_minutes: 180
+  max_retries: 3
+  retry_delay_seconds: 30
+  enable_alerts: true
+  alert_on_failure: true
+  alert_on_stuck: true
+  enable_cloudwatch_metrics: true
+  metrics_namespace: Inference/Jobs
+
+# =============================================================================
+# COST CONTROLS
+# =============================================================================
+cost_controls:
+  max_concurrent_matches: 50
+  max_concurrent_jobs_per_match: 10
+  prefer_spot_instances: true
+  allowed_instance_families:
+    - c5
+    - g4dn
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+database:
+  inference_results_table: inference_results
+  jobs_tracking_table: inference_jobs
+  metadata_table: video_frames_metadata
+  batch_size: 25
+  flush_interval_ms: 250
+
+# =============================================================================
+# TIMING
+# =============================================================================
+hls_metadata_head_start_seconds: 30
