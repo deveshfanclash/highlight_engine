@@ -1,0 +1,121 @@
+{
+  "_comment": "Instance mapping for distributed inference orchestration",
+  "_description": "Maps each service/model to specific AWS Batch queue and instance type",
+
+  "default_mappings": {
+    "_comment": "Default mappings by service type (used if no specific mapping provided)",
+    "hls_metadata": {
+      "queue": "inference-cpu-queue",
+      "instance_type": "c5.large",
+      "vcpus": 2,
+      "memory": 4096,
+      "gpu_count": 0
+    },
+    "camera_view": {
+      "queue": "inference-cpu-queue",
+      "instance_type": "c5.xlarge",
+      "vcpus": 4,
+      "memory": 8192,
+      "gpu_count": 0
+    },
+    "object_detection": {
+      "queue": "inference-gpu-queue",
+      "instance_type": "g4dn.xlarge",
+      "vcpus": 4,
+      "memory": 16384,
+      "gpu_count": 1
+    },
+    "segmentation": {
+      "queue": "inference-gpu-queue",
+      "instance_type": "g4dn.2xlarge",
+      "vcpus": 8,
+      "memory": 32768,
+      "gpu_count": 1
+    }
+  },
+
+  "example_multi_gpu_mapping": {
+    "_comment": "Example: Multiple OD models on different GPU instances",
+
+    "hls_metadata": {
+      "queue": "inference-cpu-queue",
+      "instance_type": "c5.large",
+      "vcpus": 2,
+      "memory": 4096,
+      "gpu_count": 0
+    },
+
+    "camera_view": {
+      "queue": "inference-cpu-queue",
+      "instance_type": "c5.xlarge",
+      "vcpus": 4,
+      "memory": 8192,
+      "gpu_count": 0
+    },
+
+    "od_football_od_v2": {
+      "_comment": "OD model 1 on GPU queue 1",
+      "queue": "inference-gpu-queue-1",
+      "instance_type": "g4dn.xlarge",
+      "vcpus": 4,
+      "memory": 16384,
+      "gpu_count": 1
+    },
+
+    "od_football_od_v3": {
+      "_comment": "OD model 2 on GPU queue 2 (different instance)",
+      "queue": "inference-gpu-queue-2",
+      "instance_type": "g4dn.xlarge",
+      "vcpus": 4,
+      "memory": 16384,
+      "gpu_count": 1
+    },
+
+    "seg_football_seg_v1": {
+      "_comment": "Segmentation on GPU queue 3 (larger instance)",
+      "queue": "inference-gpu-queue-3",
+      "instance_type": "g4dn.2xlarge",
+      "vcpus": 8,
+      "memory": 32768,
+      "gpu_count": 1
+    }
+  },
+
+  "example_high_throughput_mapping": {
+    "_comment": "Example: High-throughput config with larger instances",
+
+    "hls_metadata": {
+      "queue": "inference-cpu-queue",
+      "instance_type": "c5.2xlarge",
+      "vcpus": 8,
+      "memory": 16384,
+      "gpu_count": 0
+    },
+
+    "camera_view": {
+      "queue": "inference-cpu-queue",
+      "instance_type": "c5.2xlarge",
+      "vcpus": 8,
+      "memory": 16384,
+      "gpu_count": 0
+    },
+
+    "object_detection": {
+      "_comment": "Larger GPU for faster inference",
+      "queue": "inference-gpu-high-queue",
+      "instance_type": "g5.2xlarge",
+      "vcpus": 8,
+      "memory": 32768,
+      "gpu_count": 1
+    },
+
+    "segmentation": {
+      "_comment": "Multi-GPU for heavy segmentation",
+      "queue": "inference-gpu-high-queue",
+      "instance_type": "g5.12xlarge",
+      "vcpus": 48,
+      "memory": 196608,
+      "gpu_count": 4
+    }
+  }
+}
