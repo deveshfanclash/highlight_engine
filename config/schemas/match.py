@@ -105,21 +105,21 @@ class MatchMetadata(BaseModel):
     """Metadata about the match (for logging/analytics)"""
     league: Optional[str] = None
     tournament_id: Optional[str] = None
-    tournament_name: Optional[str] = None
-    season: Optional[str] = None
+    # tournament_name: Optional[str] = None
+    # season: Optional[str] = None
 
     # Teams (if applicable)
-    home_team: Optional[str] = None
-    away_team: Optional[str] = None
-    teams: List[str] = Field(default_factory=list)
+    # home_team: Optional[str] = None
+    # away_team: Optional[str] = None
+    # teams: List[str] = Field(default_factory=list)
 
     # Scheduling
-    scheduled_start: Optional[datetime] = None
-    scheduled_end: Optional[datetime] = None
+    # scheduled_start: Optional[datetime] = None
+    # scheduled_end: Optional[datetime] = None
 
     # Source
-    broadcaster: Optional[str] = None
-    stream_quality: Optional[str] = None
+    # broadcaster: Optional[str] = None
+    # stream_quality: Optional[str] = None
 
     # Custom fields
     extra: Dict[str, Any] = Field(default_factory=dict)
@@ -167,10 +167,10 @@ class MatchConfig(BaseModel):
     stream_type: InputType = Field(default=InputType.HLS)
 
     # Backup/fallback streams
-    backup_stream_urls: List[str] = Field(
-        default_factory=list,
-        description="Fallback streams if primary fails"
-    )
+    # backup_stream_urls: List[str] = Field(
+    #     default_factory=list,
+    #     description="Fallback streams if primary fails"
+    # )
 
     # -------------------------------------------------------------------------
     # OVERRIDES
@@ -188,12 +188,12 @@ class MatchConfig(BaseModel):
 
     # Timing
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    # started_at: Optional[datetime] = None
+    # completed_at: Optional[datetime] = None
 
     # Error tracking
-    error_message: Optional[str] = None
-    retry_count: int = Field(default=0)
+    # error_message: Optional[str] = None
+    # retry_count: int = Field(default=0)
 
     # -------------------------------------------------------------------------
     # METADATA
@@ -201,7 +201,7 @@ class MatchConfig(BaseModel):
     metadata: MatchMetadata = Field(default_factory=MatchMetadata)
 
     # Tags for filtering
-    tags: List[str] = Field(default_factory=list)
+    # tags: List[str] = Field(default_factory=list)
 
     class Config:
         use_enum_values = True

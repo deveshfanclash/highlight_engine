@@ -6,25 +6,22 @@ Configuration Schemas
 Tier 1: Model Registry (model.py)
     - Pure ML model definitions
     - No deployment/device info
-    - Versioned for A/B testing
+    - Class mappings and inference params
 
 Tier 2: Game Template (game.py)
     - Sport-specific logic
     - Model assignments with roles
-    - Service templates (no device info)
-    - Class mappings
+    - Service templates with settings
 
 Tier 3: Deployment Profile (deployment.py)
-    - Infrastructure configuration
-    - Service → Instance mapping
-    - Batch queues and scaling
-    - Monitoring and cost controls
+    - Development vs Production settings
+    - Local file output or DynamoDB
+    - AWS region and timing settings
 
 Tier 4: Match Config (match.py)
     - Runtime match configuration
-    - References game + deployment
+    - Stream URL and match ID
     - Override mechanism
-    - Status tracking
 """
 
 # =============================================================================
@@ -82,26 +79,10 @@ from config.schemas.game import (
 # TIER 3: DEPLOYMENT PROFILE
 # =============================================================================
 from config.schemas.deployment import (
-    # Enums
     Environment,
-    InstanceType,
-    # Instance assignment
-    InstanceAssignment,
-    # Batch config
-    BatchQueueConfig,
-    BatchConfig,
-    # Operational configs
-    ScalingConfig,
-    MonitoringConfig,
-    CostControlConfig,
-    DatabaseConfig,
-    NetworkConfig,
-    # Main config
     DeploymentProfile,
-    # Factory functions
     create_development_profile,
     create_production_profile,
-    create_multi_gpu_profile,
 )
 
 # =============================================================================
@@ -143,7 +124,6 @@ __all__ = [
     "MatchStatus",
     "OutputFormat",
     "Environment",
-    "InstanceType",
 
     # Tier 1: Model
     "ClassMapping",
@@ -169,18 +149,10 @@ __all__ = [
     "create_game_template",
 
     # Tier 3: Deployment
-    "InstanceAssignment",
-    "BatchQueueConfig",
-    "BatchConfig",
-    "ScalingConfig",
-    "MonitoringConfig",
-    "CostControlConfig",
-    "DatabaseConfig",
-    "NetworkConfig",
+    "Environment",
     "DeploymentProfile",
     "create_development_profile",
     "create_production_profile",
-    "create_multi_gpu_profile",
 
     # Tier 4: Match
     "ResumePosition",

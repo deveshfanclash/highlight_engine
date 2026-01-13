@@ -224,14 +224,14 @@ class InferenceSettings(BaseModel):
         default=[1280, 720],
         description="Default processing resolution [width, height]"
     )
-    stream_buffer_size: int = Field(default=30)
+    # stream_buffer_size: int = Field(default=30)
 
     # Quality settings
-    enable_frame_interpolation: bool = Field(default=False)
-    max_frame_lag_ms: int = Field(
-        default=1000,
-        description="Maximum acceptable lag before dropping frames"
-    )
+    # enable_frame_interpolation: bool = Field(default=False)
+    # max_frame_lag_ms: int = Field(
+    #     default=1000,
+    #     description="Maximum acceptable lag before dropping frames"
+    # )
 
 
 # =============================================================================
@@ -256,7 +256,7 @@ class GameTemplate(BaseModel):
     # -------------------------------------------------------------------------
     game_id: str = Field(..., description="Unique game identifier")
     game_name: str = Field(..., description="Human-readable name (e.g., 'Football')")
-    game_category: GameCategory = Field(default=GameCategory.BALL_SPORT)
+    # game_category: GameCategory = Field(default=GameCategory.BALL_SPORT)
     description: str = Field(default="")
 
     # -------------------------------------------------------------------------
@@ -293,10 +293,10 @@ class GameTemplate(BaseModel):
     # -------------------------------------------------------------------------
     # METADATA
     # -------------------------------------------------------------------------
-    config_version: int = Field(default=1)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    tags: List[str] = Field(default_factory=list)
+    # config_version: int = Field(default=1)
+    # created_at: Optional[datetime] = None
+    # updated_at: Optional[datetime] = None
+    # tags: List[str] = Field(default_factory=list)
 
     class Config:
         use_enum_values = True

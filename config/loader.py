@@ -43,12 +43,8 @@ from config.schemas.game import (
 )
 from config.schemas.deployment import (
     DeploymentProfile,
-    InstanceAssignment,
-    BatchConfig,
-    MonitoringConfig,
     create_development_profile,
     create_production_profile,
-    create_multi_gpu_profile,
 )
 from config.schemas.match import (
     MatchConfig,
@@ -279,24 +275,15 @@ class ConfigLoader:
     @staticmethod
     def _parse_deployment_profile(data: Dict[str, Any]) -> DeploymentProfile:
         """Parse deployment profile from dict"""
-        # Parse instance assignments
-        instance_assignments = []
-        for ia in data.get("instance_assignments", []):
-            instance_assignments.append(InstanceAssignment(**ia))
-
-        # Parse batch config
-        batch_data = data.get("batch", {})
-        batch_config = BatchConfig(**batch_data) if batch_data else BatchConfig()
-
         return DeploymentProfile(
             profile_id=data["profile_id"],
             profile_name=data.get("profile_name", ""),
-            description=data.get("description", ""),
             environment=data.get("environment", "production"),
-            instance_assignments=instance_assignments,
-            batch=batch_config,
+            local_output_dir=data.get("local_output_dir"),
+            aws_region=data.get("aws_region", "us-east-1"),
+            db_batch_size=data.get("db_batch_size", 25),
+            db_flush_interval_ms=data.get("db_flush_interval_ms", 250),
             hls_metadata_head_start_seconds=data.get("hls_metadata_head_start_seconds", 30),
-            # Other configs will use defaults if not specified
         )
 
     def load_deployment_profile_from_yaml(self, yaml_path: str) -> DeploymentProfile:
@@ -316,8 +303,6 @@ class ConfigLoader:
             return create_development_profile()
         elif profile_id == "production":
             return create_production_profile()
-        elif profile_id == "production_multi_gpu":
-            return create_multi_gpu_profile()
 
         # Try MongoDB
         if self.mongo_client:

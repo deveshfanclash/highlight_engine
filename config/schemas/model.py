@@ -57,8 +57,8 @@ class ModelParams(BaseModel):
     """
     # Core inference params
     confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    iou_threshold: float = Field(default=0.45, ge=0.0, le=1.0)
-    max_detections: int = Field(default=100, ge=1)
+    # iou_threshold: float = Field(default=0.45, ge=0.0, le=1.0)
+    # max_detections: int = Field(default=100, ge=1)
 
     # Batching
     batch_size: int = Field(default=1, ge=1)
@@ -92,32 +92,32 @@ class ResourceRequirements(BaseModel):
     """
     # GPU requirements
     requires_gpu: bool = Field(default=True, description="Does this model need a GPU?")
-    min_gpu_memory_mb: int = Field(
-        default=4000,
-        description="Minimum GPU memory in MB"
-    )
-    recommended_gpu_memory_mb: int = Field(
-        default=8000,
-        description="Recommended GPU memory for optimal performance"
-    )
+    # min_gpu_memory_mb: int = Field(
+    #     default=4000,
+    #     description="Minimum GPU memory in MB"
+    # )
+    # recommended_gpu_memory_mb: int = Field(
+    #     default=8000,
+    #     description="Recommended GPU memory for optimal performance"
+    # )
 
     # CPU requirements
-    min_cpu_cores: int = Field(default=2)
-    min_memory_mb: int = Field(default=4000)
+    # min_cpu_cores: int = Field(default=2)
+    # min_memory_mb: int = Field(default=4000)
 
     # Performance hints
-    estimated_inference_ms: int = Field(
-        default=50,
-        description="Expected inference time per frame (for capacity planning)"
-    )
-    supports_batching: bool = Field(
-        default=True,
-        description="Can this model process batches efficiently?"
-    )
-    max_batch_size: int = Field(
-        default=32,
-        description="Maximum efficient batch size"
-    )
+    # estimated_inference_ms: int = Field(
+    #     default=50,
+    #     description="Expected inference time per frame (for capacity planning)"
+    # )
+    # supports_batching: bool = Field(
+    #     default=True,
+    #     description="Can this model process batches efficiently?"
+    # )
+    # max_batch_size: int = Field(
+    #     default=32,
+    #     description="Maximum efficient batch size"
+    # )
 
 
 # =============================================================================
@@ -181,10 +181,10 @@ class ModelConfig(BaseModel):
         default="latest",
         description="Model version for A/B testing and rollback"
     )
-    checksum: Optional[str] = Field(
-        None,
-        description="SHA256 checksum for integrity verification"
-    )
+    # checksum: Optional[str] = Field(
+    #     None,
+    #     description="SHA256 checksum for integrity verification"
+    # )
 
     # -------------------------------------------------------------------------
     # NATIVE CLASSES (What the model actually outputs)
@@ -229,9 +229,9 @@ class ModelConfig(BaseModel):
         default_factory=list,
         description="Tags for filtering (e.g., ['football', 'v2', 'production'])"
     )
-    created_by: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    # created_by: Optional[str] = None
+    # created_at: Optional[str] = None
+    # updated_at: Optional[str] = None
 
     class Config:
         protected_namespaces = ()
