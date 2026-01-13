@@ -147,22 +147,70 @@ class DynamoDBWriter:
         if not self._buffer:
             return 0
 
-        table = self._get_table()
         items_to_write = self._buffer.copy()
         self._buffer.clear()
 
-        written = 0
-        for item in items_to_write:
-            try:
-                prepared = self._prepare_item(item)
-                table.put_item(Item=prepared)
-                written += 1
-            except Exception as e:
-                logger.error(f"Failed to write item to DynamoDB: {e}")
-                # Could implement retry logic here
-
+        written = self.write_items_batch(items_to_write)
         self._last_flush = time.time()
-        logger.debug(f"Flushed {written} items to DynamoDB")
+
+        return written
+
+    def write_items_batch(
+        self,
+        items: List[Dict[str, Any]],
+        overwrite_keys: Optional[List[str]] = None
+    ) -> int:
+        """
+        Write multiple items using DynamoDB batch_writer (efficient for bulk writes).
+
+        Uses batch_writer() which:
+        - Automatically batches items (max 25 per request, DynamoDB limit)
+        - Handles retries for unprocessed items
+        - Much more efficient than individual put_item() calls
+
+        Args:
+            items: List of items to write
+            overwrite_keys: Primary key fields for upsert behavior
+                           (e.g., ["match_id", "ptstime"] for HLS metadata)
+
+        Returns:
+            Number of items written
+        """
+        if not items:
+            return 0
+
+        table = self._get_table()
+        written = 0
+
+        try:
+            # Use batch_writer for efficient bulk writes
+            # overwrite_by_pkeys allows upsert behavior (replace if exists)
+            batch_kwargs = {}
+            if overwrite_keys:
+                batch_kwargs["overwrite_by_pkeys"] = overwrite_keys
+
+            with table.batch_writer(**batch_kwargs) as writer:
+                for item in items:
+                    try:
+                        prepared = self._prepare_item(item)
+                        writer.put_item(Item=prepared)
+                        written += 1
+                    except Exception as e:
+                        logger.error(f"Failed to prepare item for batch: {e}")
+
+            logger.debug(f"Batch wrote {written} items to DynamoDB")
+
+        except Exception as e:
+            logger.error(f"Batch write failed: {e}")
+            # Fallback to individual writes if batch fails
+            logger.info("Falling back to individual writes...")
+            for item in items:
+                try:
+                    prepared = self._prepare_item(item)
+                    table.put_item(Item=prepared)
+                    written += 1
+                except Exception as e2:
+                    logger.error(f"Individual write also failed: {e2}")
 
         return written
 
@@ -453,18 +501,38 @@ class LocalFileWriter:
 
     def flush(self) -> int:
         """Flush buffer to file"""
-        import json
-
         if not self._buffer:
             return 0
 
-        with open(self._output_file, "a") as f:
-            for item in self._buffer:
-                f.write(json.dumps(item, default=str) + "\n")
-
-        count = len(self._buffer)
+        count = self.write_items_batch(self._buffer)
         self._buffer.clear()
         return count
+
+    def write_items_batch(
+        self,
+        items: List[Dict[str, Any]],
+        overwrite_keys: Optional[List[str]] = None
+    ) -> int:
+        """
+        Write multiple items to file in a single operation.
+
+        Args:
+            items: List of items to write
+            overwrite_keys: Ignored for local files (included for API compatibility)
+
+        Returns:
+            Number of items written
+        """
+        import json
+
+        if not items:
+            return 0
+
+        with open(self._output_file, "a") as f:
+            for item in items:
+                f.write(json.dumps(item, default=str) + "\n")
+
+        return len(items)
 
     def start_background_writer(self):
         """Start background writer thread"""

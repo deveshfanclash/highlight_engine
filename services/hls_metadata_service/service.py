@@ -236,12 +236,16 @@ class HLSMetadataService:
             return 0
 
     def _write_batch(self, items: List[Dict[str, Any]]):
-        """Write batch of items to DB or local file"""
+        """Write batch of items to DB or local file using efficient batch operations"""
         if self.config.local_output_dir:
             self._write_local(items)
         elif self._db_writer:
-            for item in items:
-                self._db_writer.write_item(item)
+            # Use batch write with overwrite keys matching old codebase
+            # Old code used: overwrite_by_pkeys=["match_id", "ptstime"]
+            self._db_writer.write_items_batch(
+                items,
+                overwrite_keys=["pk", "sk"]  # pk=match_id, sk=ptstime
+            )
 
     def _write_local(self, items: List[Dict[str, Any]]):
         """Write to local JSON file for testing"""
@@ -431,6 +435,7 @@ def main():
     parser.add_argument("--stream-url", required=True, help="Stream URL")
     parser.add_argument("--poll-interval", type=int, default=5, help="Poll interval (seconds)")
     parser.add_argument("--timeout", type=int, default=60, help="Timeout for no new segments")
+    parser.add_argument("--resolution-preference", default="_480p.m3u8", help="Resolution preference")
     parser.add_argument("--db-table", default="video_frames_metadata", help="DynamoDB table")
     parser.add_argument("--local-output", help="Local output directory (for testing)")
 
@@ -440,6 +445,7 @@ def main():
         match_id=args.match_id,
         stream_url=args.stream_url,
         poll_interval=args.poll_interval,
+        resolution_preference=args.resolution_preference,
         timeout_no_segment=args.timeout,
         db_table_name=args.db_table,
         local_output_dir=args.local_output,
