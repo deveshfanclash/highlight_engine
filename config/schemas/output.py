@@ -97,3 +97,6 @@ class HLSMetadataOutput(BaseModel):
     fps: float
 
     written_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# Other output schemas classes can be added here to test out in between data structures

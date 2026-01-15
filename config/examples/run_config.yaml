@@ -1,0 +1,337 @@
+# =============================================================================
+# UNIFIED RUN CONFIG
+# =============================================================================
+# Single YAML file to run the complete inference pipeline.
+#
+# Usage:
+#   python -m orchestrator.match_orchestrator --run-config config/examples/run_config.yaml
+#
+# This file contains all 4 configuration tiers:
+#   - Runtime settings (match_id, stream_url)
+#   - Deployment settings (local vs prod, DynamoDB settings)
+#   - Model definitions (Tier 1)
+#   - Game template (Tier 2) with services
+# =============================================================================
+
+
+# =============================================================================
+# RUNTIME SETTINGS (Required)
+# =============================================================================
+match_id: "test_match_001"
+stream_url: "https://highlights-cdn.spectatr.gg/hls/production/6916cd5e048cd263ff8841ce/67f8a71e6d0b02e4b1742839/segments.m3u8"
+stream_type: "hls"  # Options: hls, mp4, file
+
+
+# =============================================================================
+# DEPLOYMENT SETTINGS (Tier 3)
+# =============================================================================
+deployment:
+  # Environment: development or production
+  environment: "production"
+
+  # Development mode: Write to local files instead of DynamoDB
+  # Set to null or remove for production DynamoDB writes
+  local_output_dir: "./test_output"
+
+  # AWS region for DynamoDB (production only)
+  aws_region: "us-east-2"
+
+  # DynamoDB batch write settings (production only)
+  db_batch_size: 25
+  db_flush_interval_ms: 250
+
+  # Orchestrator timing
+  hls_metadata_head_start_seconds: 10  # Seconds to wait for HLS metadata before other services
+
+  # Resume functionality
+  enable_resume: False  # Query HLS metadata for resume position
+
+
+# =============================================================================
+# GAME TEMPLATE (Tier 2)
+# =============================================================================
+game_id: "football_v1"
+game_name: "Football / Soccer"
+description: "Football inference configuration with object detection and camera view"
+
+# Game category (for organization)
+# game_category: "ball_sport"  # Options: ball_sport, track_and_field, combat, other
+
+
+# =============================================================================
+# INFERENCE SETTINGS (Global defaults)
+# =============================================================================
+inference_settings:
+  # target_fps: 25
+  # frame_skip: 1                       # Process every frame (1 = no skip)
+  # processing_resolution: [1280, 720]  # [width, height]
+
+  # Advanced settings (uncomment if needed)
+  # stream_buffer_size: 30
+  # enable_frame_interpolation: false
+  # max_frame_lag_ms: 1000
+
+
+# =============================================================================
+# MODELS (Tier 1 - Model Registry)
+# =============================================================================
+models:
+  # -------------------------------------------------------------------------
+  # Object Detection Model
+  # -------------------------------------------------------------------------
+  - model_id: "yolo_football_v2"
+    model_name: "YOLO Football Detector v2"
+    description: "YOLOv8 model trained on football/soccer footage"
+
+    # Model type and architecture
+    model_type: "object_detection"  # Options: object_detection, segmentation, classification, keypoint
+    model_architecture: "yolov8"    # Options: yolov5, yolov8, yolov11, rtdetr, detectron2, custom
+    output_format: "bbox"           # Options: bbox, mask, keypoints, class_scores
+
+    # Model source
+    # model_url: "s3://models/yolo_football_v2.pt"
+    model_url: "/Users/spectatr/Downloads/best_263_nano_1920_bph_v3.pt"
+    # version: "2.0.0"
+    # checksum: "sha256:abc123..."  # For integrity verification
+
+    # Native classes (what the model outputs)
+    native_classes: ["ball"]
+    native_class_ids: [0]
+
+    # Class mapping (model class ID -> universal class name)
+    default_class_mapping:
+      # - model_class_id: 0
+      #   model_class_name: "person"
+      #   universal_class_name: "PLAYER"
+        # confidence_threshold: 0.6  # Per-class threshold override
+
+      - model_class_id: 0
+        model_class_name: "ball"
+        universal_class_name: "BALL"
+        # confidence_threshold: 0.4  # Lower threshold for ball (harder to detect)
+
+      # - model_class_id: 2
+      #   model_class_name: "goal"
+      #   universal_class_name: "GOAL"
+
+      # - model_class_id: 3
+      #   model_class_name: "referee"
+      #   universal_class_name: "REFEREE"
+
+    # Default inference parameters
+    default_params:
+      confidence_threshold: 0.5
+      # iou_threshold: 0.45
+      # max_detections: 100
+      # batch_size: 1
+      # input_size: [640, 640]  # null = use model default
+      # half_precision: false     # FP16 inference
+      # extra: {}               # Model-specific parameters
+
+    # Resource requirements (hints for deployment)
+    resources:
+      requires_gpu: False
+      # min_gpu_memory_mb: 4000
+      # recommended_gpu_memory_mb: 8000
+      # min_cpu_cores: 2
+      # min_memory_mb: 4000
+      # estimated_inference_ms: 50
+      # supports_batching: true
+      # max_batch_size: 32
+
+    # Tags for filtering
+    # tags: ["football", "production", "v2"]
+
+  # -------------------------------------------------------------------------
+  # Additional Models (uncomment as needed)
+  # -------------------------------------------------------------------------
+  # - model_id: "yolo_ball_tracker_v1"
+  #   model_name: "Ball Tracker"
+  #   model_type: "object_detection"
+  #   model_architecture: "yolov8"
+  #   model_url: "s3://models/ball_tracker_v1.pt"
+  #   native_classes: ["ball"]
+  #   native_class_ids: [0]
+  #   default_class_mapping:
+  #     - model_class_id: 0
+  #       universal_class_name: "BALL"
+  #   default_params:
+  #     confidence_threshold: 0.3
+  #   resources:
+  #     requires_gpu: true
+  #   tags: ["ball", "specialized"]
+
+  # - model_id: "field_segmentation_v1"
+  #   model_name: "Field Segmentation"
+  #   model_type: "segmentation"
+  #   model_architecture: "custom"
+  #   model_url: "s3://models/field_seg_v1.pt"
+  #   output_format: "mask"
+  #   native_classes: ["field", "lines", "penalty_area"]
+  #   resources:
+  #     requires_gpu: true
+
+
+# =============================================================================
+# MODEL ASSIGNMENTS (How models are used in this game)
+# =============================================================================
+model_assignments:
+  - model_id: "yolo_football_v2"
+    role: "default"                   # Role in game: default, primary_od, ball_detector, etc.
+    priority: 1                       # Higher = processed first
+    class_filter: [0]                  # Empty = use all classes
+    # class_mapping_override: []      # Override default_class_mapping for this game
+    # params_override:                # Override default_params for this game
+    #   confidence_threshold: 0.6
+
+  # - model_id: "yolo_ball_tracker_v1"
+  #   role: "ball_detector"
+  #   priority: 2
+
+  # - model_id: "field_segmentation_v1"
+  #   role: "segmentation"
+
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+  # -------------------------------------------------------------------------
+  # HLS Metadata Service (RUNS FIRST for resume functionality)
+  # -------------------------------------------------------------------------
+  - service_type: "hls_metadata"
+    enabled: true
+
+    # HLS-specific settings
+    poll_interval_seconds: 5          # How often to check for new segments
+    timeout_no_segment_seconds: 60    # Stop if no new segments for this long
+    resolution_preference: "_1080p.m3u8"  # Preferred resolution variant
+
+    # Output settings
+    # db_table_name: "hls_metadata"
+    # db_batch_size: 12
+    # db_flush_interval_ms: 250
+
+    # Processing settings (inherited from base)
+    # processing_pattern: "frame_by_frame"
+    # frame_skip: 1
+
+  # -------------------------------------------------------------------------
+  # Camera View Service
+  # -------------------------------------------------------------------------
+  - service_type: "camera_view"
+    enabled: true
+
+    # Detection thresholds
+    phash_threshold: 20               # Perceptual hash difference threshold
+    histogram_threshold: 0.90         # Color histogram similarity threshold
+    min_frame_gap: 25                 # Minimum frames between detections
+
+    # Processing settings
+    resolution_scale: 0.5             # Scale factor from processing_resolution
+
+    # Output settings
+    # db_table_name: "camera_view"
+    # db_batch_size: 12
+    # db_flush_interval_ms: 250
+
+    # frame_skip: 1
+    # processing_pattern: "frame_by_frame"
+
+  # -------------------------------------------------------------------------
+  # Object Detection Service
+  # -------------------------------------------------------------------------
+  - service_type: "object_detection"
+    enabled: true
+
+    # Which model roles to use
+    model_roles: ["default"]          # References model_assignments by role
+
+    # Processing settings
+    # target_width: 1280                # null = use processing_resolution
+    # target_height: 720
+    # frame_skip: 1
+
+    # Output settings
+    # db_table_name: "detections"
+    # db_batch_size: 12
+    # db_flush_interval_ms: 250
+
+    # processing_pattern: "frame_by_frame"
+
+  # -------------------------------------------------------------------------
+  # Segmentation Service (uncomment if needed)
+  # -------------------------------------------------------------------------
+  # - service_type: "segmentation"
+  #   enabled: false
+  #   model_roles: ["segmentation"]
+  #   target_width: 1280
+  #   target_height: 720
+  #
+  #   # Segmentation-specific settings
+  #   save_masks_to_s3: true
+  #   mask_format: "npz"               # Options: npz, png
+  #
+  #   db_table_name: "segmentation"
+  #   db_batch_size: 5
+  #   frame_skip: 5                    # Segmentation is expensive, skip frames
+
+  # -------------------------------------------------------------------------
+  # Replay Detection Service (uncomment if needed)
+  # -------------------------------------------------------------------------
+  # - service_type: "replay_detection"
+  #   enabled: false
+  #   model_roles: []
+  #   overlay_detection_threshold: 0.8
+  #
+  #   db_table_name: "replay_detection"
+  #   frame_skip: 1
+
+  # -------------------------------------------------------------------------
+  # Event Detection Service (uncomment if needed)
+  # -------------------------------------------------------------------------
+  # - service_type: "event_detection"
+  #   enabled: false
+  #   processing_pattern: "clip_based"
+  #   model_roles: []
+  #
+  #   # Clip-based processing settings
+  #   clip_duration_seconds: 10.0
+  #   clip_overlap_seconds: 2.0
+  #
+  #   db_table_name: "events"
+
+  # -------------------------------------------------------------------------
+  # Audio Analysis Service (uncomment if needed)
+  # -------------------------------------------------------------------------
+  # - service_type: "audio_analysis"
+  #   enabled: false
+  #   processing_pattern: "audio_based"
+  #   model_roles: []
+  #
+  #   # Audio processing settings
+  #   sample_rate: 16000
+  #   chunk_duration_seconds: 30.0
+  #
+  #   db_table_name: "audio_analysis"
+
+
+# =============================================================================
+# UNIVERSAL CLASS DEFINITIONS (Game-specific interpretations)
+# =============================================================================
+# This defines how this game interprets universal class names
+# For example, PERSON might be split into PLAYER, REFEREE, GOALKEEPER
+universal_class_definitions:
+  # PLAYER:
+  #   display_name: "Player"
+  #   color: "#00FF00"
+    # sub_classes: ["home_player", "away_player"]
+  BALL:
+    display_name: "Ball"
+    color: "#FFFF00"
+  # GOAL:
+  #   display_name: "Goal"
+  #   color: "#0000FF"
+  # REFEREE:
+  #   display_name: "Referee"
+  #   color: "#FF0000"
