@@ -754,41 +754,16 @@ def real_time_inference(message):
 
 def main():
     # Example usage
-    # hls_url = "http://127.0.0.1:8000/index.m3u8" # index.m3u8
     # hls_url = "https://highlights-cdn.spectatr.gg/streams/test_06516813-8547-4981-ab3f-539a4bfbd9fc/playlist/video_173441383952355.m3u8" #1 minute testing file
     # hls_url = "https://highlights-cdn.spectatr.gg/streams/test_5359d239-6539-41b7-918a-333d598430e8/playlist/video_test_5359d239-6539-41b7-918a-333d598430e8.m3u8" # 7 minute testing file
-
-    message = {
-        "matchId": "68ad7212e02bcdd9011ee6ab",
-        "streamUrl": "https://highlights-cdn.spectatr.gg/hls/production/68ad7212e02bcdd9011ee6ab/67f8b5ea6d0b02e4b1742849/segments.m3u8",
-        "streamStatus": "started",
-        "league": "league",
-        "lang": "en",
-        "game": {
-            "id": "68695c52a425fc77ac37b8da",
-            "name": "Volleyball",
-        },
-        "tournament": {
-            "id": "68a6ef0f116ca0108d840934",
-            "name": "Northern Super League 2025",
-        }
-    }
-
     # ANOC match
     message = {
-        "matchId": "6900b9dfb27a3d87f879efc6",
-        "streamUrl": "https://highlights-cdn.spectatr.gg/hls/staging/6900b9dfb27a3d87f879efc6/67876a3d86c44d602c6d57c1/segments.m3u8",
-        "streamStatus": "started",
-        "league": "anoc",
-        "lang": "en",
+        "matchId": "6969fa712f403627e8e78d66",
+        "streamUrl": "https://highlights-internal.dev.spectatr.ai/hls/staging/69689ce896b138eadb2e973e/6969fa712f403627e8e78d66/segments.m3u8",
         "game": {
-            "id": "69049b1ddf22c84448a7b9e2", # for cricket
-            "name": "athletics",
+            "id": "68695c52a425fc77ac37b8da", # for cricket
+            "name": "football",
         },
-        "tournament": {
-            "id": "68a6ef0f116ca0108d840934",
-            "name": "Northern Super League 2025",
-        }
     }
 
     real_time_inference(message)

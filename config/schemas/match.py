@@ -1,12 +1,11 @@
 """
-Match Configuration (Tier 4)
+Match Configuration (Tier 3)
 
 Runtime configuration for a specific match.
 This is what gets created when a match starts.
 
 MatchConfig:
 - References GameTemplate (Tier 2) by game_id
-- References DeploymentProfile (Tier 3) by deployment_profile_id
 - Contains stream URL and match metadata
 - Supports overrides for this specific match
 - Tracks runtime state (status, resume position)
@@ -59,7 +58,7 @@ class MatchOverrides(BaseModel):
     Override resolution order:
     1. Model defaults (ModelConfig.default_params)
     2. Game assignment (GameTemplate.model_assignments[].params_override)
-    3. Match override (MatchConfig.overrides) ← Highest priority
+    3. Match override (MatchConfig.overrides) <- Highest priority
     """
 
     # Inference settings override
@@ -68,23 +67,16 @@ class MatchOverrides(BaseModel):
         description="Override global inference settings"
     )
 
-    # Model parameter overrides (model_id → params)
+    # Model parameter overrides (model_id -> params)
     model_params: Dict[str, ModelParams] = Field(
         default_factory=dict,
         description="Override model params by model_id"
     )
 
-    # Service overrides (service_type → settings)
+    # Service overrides (service_type -> settings)
     service_overrides: Dict[str, ServiceOverride] = Field(
         default_factory=dict,
         description="Override service settings by service_type"
-    )
-
-    # Instance assignment overrides (service_id → instance config)
-    # Overrides DeploymentProfile mappings for this match only
-    instance_overrides: Dict[str, Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Override instance assignments for specific services"
     )
 
     # Class mapping overrides
@@ -105,10 +97,6 @@ class MatchMetadata(BaseModel):
     """Metadata about the match (for logging/analytics)"""
     league: Optional[str] = None
     tournament_id: Optional[str] = None
-    # tournament_name: Optional[str] = None
-    # season: Optional[str] = None
-    # broadcaster: Optional[str] = None
-    # stream_quality: Optional[str] = None
 
     # Custom fields
     extra: Dict[str, Any] = Field(default_factory=dict)
@@ -120,13 +108,12 @@ class MatchMetadata(BaseModel):
 
 class MatchConfig(BaseModel):
     """
-    Match Configuration (Tier 4).
+    Match Configuration (Tier 3).
 
     Runtime configuration for a specific match.
 
     References:
     - GameTemplate (Tier 2) via game_id
-    - DeploymentProfile (Tier 3) via deployment_profile_id
 
     Contains:
     - Stream URL and type
@@ -144,22 +131,12 @@ class MatchConfig(BaseModel):
     # REFERENCES (Links to other tiers)
     # -------------------------------------------------------------------------
     game_id: str = Field(..., description="Reference to GameTemplate (Tier 2)")
-    deployment_profile_id: str = Field(
-        default="production",
-        description="Reference to DeploymentProfile (Tier 3)"
-    )
 
     # -------------------------------------------------------------------------
     # INPUT CONFIGURATION
     # -------------------------------------------------------------------------
     stream_url: str = Field(..., description="Input stream URL (HLS, RTSP, etc.)")
     stream_type: InputType = Field(default=InputType.HLS)
-
-    # Backup/fallback streams
-    # backup_stream_urls: List[str] = Field(
-    #     default_factory=list,
-    #     description="Fallback streams if primary fails"
-    # )
 
     # -------------------------------------------------------------------------
     # OVERRIDES
@@ -183,9 +160,6 @@ class MatchConfig(BaseModel):
     # -------------------------------------------------------------------------
     metadata: MatchMetadata = Field(default_factory=MatchMetadata)
 
-    # Tags for filtering
-    # tags: List[str] = Field(default_factory=list)
-
     class Config:
         use_enum_values = True
 
@@ -203,12 +177,6 @@ class MatchConfig(BaseModel):
         """Get service override for a specific service type"""
         if self.overrides and service_type in self.overrides.service_overrides:
             return self.overrides.service_overrides[service_type]
-        return None
-
-    def get_instance_override(self, service_id: str) -> Optional[Dict[str, Any]]:
-        """Get instance override for a specific service"""
-        if self.overrides and service_id in self.overrides.instance_overrides:
-            return self.overrides.instance_overrides[service_id]
         return None
 
     def mark_started(self):
@@ -234,14 +202,6 @@ class MatchConfig(BaseModel):
         self.resume_position.timestamp_ms = timestamp_ms
         self.resume_position.last_updated = datetime.utcnow()
 
-    def to_dynamo_item(self) -> Dict[str, Any]:
-        """Convert to DynamoDB item format"""
-        return {
-            "pk": f"{self.match_id}#match",
-            "sk": "config",
-            **self.model_dump(mode="json"),
-        }
-
 
 # =============================================================================
 # FACTORY FUNCTIONS
@@ -251,7 +211,6 @@ def create_match_config(
     match_id: str,
     stream_url: str,
     game_id: str,
-    deployment_profile_id: str = "production",
     stream_type: InputType = InputType.HLS,
     overrides: Optional[Dict[str, Any]] = None,
     metadata: Optional[Dict[str, Any]] = None,
@@ -263,7 +222,6 @@ def create_match_config(
         match_id: Unique match identifier
         stream_url: HLS/RTSP stream URL
         game_id: Reference to GameTemplate
-        deployment_profile_id: Reference to DeploymentProfile
         stream_type: Type of stream
         overrides: Optional override dict
         metadata: Optional metadata dict
@@ -283,7 +241,6 @@ def create_match_config(
         match_id=match_id,
         stream_url=stream_url,
         game_id=game_id,
-        deployment_profile_id=deployment_profile_id,
         stream_type=stream_type,
         overrides=match_overrides,
         metadata=match_metadata,

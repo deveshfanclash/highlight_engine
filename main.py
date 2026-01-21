@@ -2,18 +2,24 @@
 """
 Inference System Entry Point
 
-Simple entry point for running inference services.
-
 Usage:
+    # Local mode (no AWS credentials needed)
+    python main.py \
+      --game-config config/games/football_v1.yaml \
+      --match-id test_123 \
+      --source /path/to/video.mp4 \
+      --local
+
+    # Production mode (requires AWS credentials via env vars)
     python main.py \
       --game-config config/games/football_v1.yaml \
       --match-id match_12345 \
       --source "https://cdn.example.com/stream.m3u8" \
-      --resume start  # start | current | latest
+      --resume current
 
 Resume Modes:
     - start:   Fresh start from frame 0
-    - current: Resume from last written frame (queries DB)
+    - current: Resume from last written frame (queries DB, skipped in local mode)
     - latest:  Start from current stream position (live edge)
 """
 
@@ -23,6 +29,7 @@ import sys
 from typing import Optional, Dict, Any
 
 from config.loader import ConfigLoader
+from config.environment import get_infra_config
 from config.schemas import InputType, ServiceType
 from core.resume import ResumeMode, get_resume_position
 from services.od_service import ODService, ODServiceConfig
@@ -54,7 +61,6 @@ def get_input_type(source_url: str) -> InputType:
     elif source_lower.startswith('rtsp://'):
         return InputType.RTSP
     else:
-        # Default to HLS for URLs
         return InputType.HLS
 
 
@@ -67,7 +73,8 @@ def create_od_service_config(
     start_frame: int = 0,
     start_segment: int = 0,
     device: str = "cuda:0",
-    local_output_dir: Optional[str] = None,
+    local_mode: bool = False,
+    output_dir: Optional[str] = None,
 ) -> ODServiceConfig:
     """Create ODServiceConfig from game config components"""
     input_type = get_input_type(source_url)
@@ -95,7 +102,8 @@ def create_od_service_config(
         db_table_name=service_config.get("db_table_name", "inference_results"),
         db_batch_size=service_config.get("db_batch_size", 12),
         db_flush_interval_ms=service_config.get("db_flush_interval_ms", 250),
-        local_output_dir=local_output_dir,
+        local_mode=local_mode,
+        local_output_dir=output_dir,
         model_id=model_config.get("model_id", ""),
         model_url=model_config.get("model_url", ""),
         model_architecture=model_config.get("model_architecture", "yolov8"),
@@ -117,7 +125,8 @@ def create_pose_service_config(
     start_frame: int = 0,
     start_segment: int = 0,
     device: str = "cuda:0",
-    local_output_dir: Optional[str] = None,
+    local_mode: bool = False,
+    output_dir: Optional[str] = None,
 ) -> PoseServiceConfig:
     """Create PoseServiceConfig from game config components"""
     input_type = get_input_type(source_url)
@@ -138,7 +147,8 @@ def create_pose_service_config(
         db_table_name=service_config.get("db_table_name", "inference_results"),
         db_batch_size=service_config.get("db_batch_size", 12),
         db_flush_interval_ms=service_config.get("db_flush_interval_ms", 250),
-        local_output_dir=local_output_dir,
+        local_mode=local_mode,
+        local_output_dir=output_dir,
         model_id=model_config.get("model_id", ""),
         model_url=model_config.get("model_url", ""),
         model_architecture=model_config.get("model_architecture", "yolov8-pose"),
@@ -157,9 +167,8 @@ def run_service(
     resume_mode: ResumeMode,
     service_type: Optional[str] = None,
     device: str = "cuda:0",
-    local_output_dir: Optional[str] = None,
-    db_table_name: str = "inference_results",
-    aws_region: str = "us-east-1",
+    local_mode: bool = False,
+    output_dir: Optional[str] = None,
 ):
     """
     Run an inference service based on game configuration.
@@ -169,12 +178,18 @@ def run_service(
         match_id: Match identifier
         source_url: Stream URL or file path
         resume_mode: Resume mode (start, current, latest)
-        service_type: Specific service type to run (optional, runs first enabled if not specified)
+        service_type: Specific service type to run (optional)
         device: Device to run on (cpu, cuda:0, etc.)
-        local_output_dir: Local output directory (for testing without DynamoDB)
-        db_table_name: DynamoDB table name
-        aws_region: AWS region
+        local_mode: If True, run without infrastructure dependencies
+        output_dir: Output directory for local mode
     """
+    # Initialize infrastructure config
+    infra = get_infra_config(local_mode=local_mode, output_dir=output_dir)
+
+    if local_mode:
+        logger.info("Running in LOCAL MODE - no AWS credentials required")
+        output_dir = output_dir or str(infra.output_path)
+
     # Load game configuration
     logger.info(f"Loading game config from: {game_config_path}")
     game_template, model_registry = ConfigLoader.load_from_yaml(game_config_path)
@@ -200,7 +215,6 @@ def run_service(
             logger.error(f"Service type '{service_type}' not found or not enabled")
             return
     else:
-        # Run first enabled service
         target_service = enabled_services[0]
 
     logger.info(f"Running service: {target_service.service_type.value}")
@@ -215,7 +229,6 @@ def run_service(
             model = model_registry.get_model(assignment.model_id)
             if model:
                 model_config = model.model_dump()
-                # Apply any assignment-level overrides
                 if assignment.params_override:
                     model_config["default_params"] = {
                         **model_config.get("default_params", {}),
@@ -231,13 +244,15 @@ def run_service(
 
     # Calculate resume position
     service_id = f"{target_service.service_type.value}_{model_config['model_id']}"
+    db_table_name = getattr(target_service, 'db_table_name', 'inference_results')
+
     resume_position = get_resume_position(
         mode=resume_mode,
         match_id=match_id,
         service_id=service_id,
         source_url=source_url,
         table_name=db_table_name,
-        region=aws_region,
+        local_mode=local_mode,
     )
 
     logger.info(
@@ -260,7 +275,8 @@ def run_service(
             start_frame=max(0, resume_position.frame_number),
             start_segment=max(0, resume_position.segment_number),
             device=device,
-            local_output_dir=local_output_dir,
+            local_mode=local_mode,
+            output_dir=output_dir,
         )
         service = ODService(config)
 
@@ -274,7 +290,8 @@ def run_service(
             start_frame=max(0, resume_position.frame_number),
             start_segment=max(0, resume_position.segment_number),
             device=device,
-            local_output_dir=local_output_dir,
+            local_mode=local_mode,
+            output_dir=output_dir,
         )
         service = PoseService(config)
 
@@ -295,15 +312,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run with local file output (testing)
+  # Local mode (no AWS credentials needed)
   python main.py \\
     --game-config config/games/football_v1.yaml \\
     --match-id test_123 \\
     --source /path/to/video.mp4 \\
-    --resume start \\
-    --local-output ./output
+    --local
 
-  # Run with DynamoDB output
+  # Production mode with DynamoDB output
   python main.py \\
     --game-config config/games/football_v1.yaml \\
     --match-id match_12345 \\
@@ -312,7 +328,7 @@ Examples:
 
 Resume Modes:
   start   - Fresh start from frame 0
-  current - Resume from last written frame (queries DB)
+  current - Resume from last written frame (queries DB, skipped in local mode)
   latest  - Start from current stream position (live edge)
         """
     )
@@ -348,18 +364,13 @@ Resume Modes:
         help="Device to run on (default: cuda:0)"
     )
     parser.add_argument(
-        "--local-output", "-o",
-        help="Local output directory (for testing without DynamoDB)"
+        "--local", "-l",
+        action="store_true",
+        help="Run in local mode (no AWS credentials required, outputs to files)"
     )
     parser.add_argument(
-        "--db-table",
-        default="inference_results",
-        help="DynamoDB table name (default: inference_results)"
-    )
-    parser.add_argument(
-        "--aws-region",
-        default="us-east-1",
-        help="AWS region (default: us-east-1)"
+        "--output-dir", "-o",
+        help="Output directory for local mode (default: ./output)"
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -384,9 +395,8 @@ Resume Modes:
             resume_mode=resume_mode,
             service_type=args.service_type,
             device=args.device,
-            local_output_dir=args.local_output,
-            db_table_name=args.db_table,
-            aws_region=args.aws_region,
+            local_mode=args.local,
+            output_dir=args.output_dir,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

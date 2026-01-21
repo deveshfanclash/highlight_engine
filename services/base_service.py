@@ -8,17 +8,16 @@ ServiceConfig defines runtime configuration (stream, match ID, device, etc.)
 Extended by specific configs (ODServiceConfig, PoseServiceConfig).
 """
 
-import os
 import logging
 import signal
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from datetime import datetime
 
 from config.schemas import InputType, ProcessingPattern
 from input_handlers import FrameInputHandler, FrameInputPacket
-from db.dynamo import DynamoDBWriter, DynamoDBWriterConfig, LocalFileWriter, create_writer
+from db.dynamo import DynamoDBWriter, LocalFileWriter, create_writer
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +52,9 @@ class ServiceConfig:
     db_batch_size: int = 12
     db_flush_interval_ms: int = 250
 
-    # Local testing mode
-    local_output_dir: Optional[str] = None  # If set, write to files instead of DB
+    # Local mode settings
+    local_mode: bool = False  # If True, skip infrastructure dependencies
+    local_output_dir: Optional[str] = None  # Output directory for local mode
 
     # Additional params (service-specific)
     params: Dict[str, Any] = field(default_factory=dict)
@@ -83,7 +83,7 @@ class BaseService(ABC):
 
         # Will be initialized in setup()
         self._input_handler: Optional[FrameInputHandler] = None
-        self._db_writer: Optional[DynamoDBWriter] = None
+        self._db_writer: Optional[Union[DynamoDBWriter, LocalFileWriter]] = None
 
         # Statistics
         self._frames_processed = 0
@@ -122,12 +122,13 @@ class BaseService(ABC):
             self._db_writer = create_writer(
                 table_name=self.config.db_table_name,
                 use_background=True,
+                local_mode=self.config.local_mode,
                 local_output_dir=self.config.local_output_dir,
                 match_id=self.config.match_id,
                 service_id=self.config.service_id,
             )
 
-            if self.config.local_output_dir:
+            if self.config.local_mode or self.config.local_output_dir:
                 logger.info(f"Using LOCAL FILE output: {self.config.local_output_dir}")
             else:
                 logger.info(f"Using DynamoDB output: {self.config.db_table_name}")
@@ -325,7 +326,7 @@ class BaseService(ABC):
         return self._input_handler
 
     @property
-    def db_writer(self) -> Optional[DynamoDBWriter]:
+    def db_writer(self) -> Optional[Union[DynamoDBWriter, LocalFileWriter]]:
         """Access to DB writer (for advanced use)"""
         return self._db_writer
 

@@ -1,16 +1,18 @@
 """
 Configuration Module
 
-4-Tier Configuration System:
+3-Tier Configuration System:
 - Tier 1: Model Registry (model.py) - Pure ML model definitions
 - Tier 2: Game Template (game.py) - Sport-specific logic
-- Tier 3: Deployment Profile (deployment.py) - Infrastructure configuration
-- Tier 4: Match Config (match.py) - Runtime match configuration
+- Tier 3: Match Config (match.py) - Runtime match configuration
+
+Infrastructure configuration is handled separately in config/environment.py
 
 Structure:
 - config/schemas/ - Modular schema definitions
 - config/loader.py - Load configs from YAML or MongoDB
 - config/class_registry.py - Universal class definitions
+- config/environment.py - Infrastructure/env config
 """
 
 # Import from schemas module
@@ -25,7 +27,6 @@ from config.schemas import (
     GameCategory,
     MatchStatus,
     OutputFormat,
-    Environment,
 
     # Tier 1: Model
     ClassMapping,
@@ -45,12 +46,7 @@ from config.schemas import (
     create_service_template_from_dict,
     create_game_template,
 
-    # Tier 3: Deployment
-    DeploymentProfile,
-    create_development_profile,
-    create_production_profile,
-
-    # Tier 4: Match
+    # Tier 3: Match
     ResumePosition,
     ServiceOverride,
     MatchOverrides,
@@ -80,6 +76,13 @@ from config.class_registry import (
     create_model_to_universal_mapping,
 )
 
+from config.environment import (
+    InfraConfig,
+    get_infra_config,
+    reset_config,
+    PROJECT_ROOT,
+)
+
 __all__ = [
     # Enums
     "ModelType",
@@ -91,7 +94,6 @@ __all__ = [
     "GameCategory",
     "MatchStatus",
     "OutputFormat",
-    "Environment",
 
     # Tier 1: Model
     "ClassMapping",
@@ -111,12 +113,7 @@ __all__ = [
     "create_service_template_from_dict",
     "create_game_template",
 
-    # Tier 3: Deployment
-    "DeploymentProfile",
-    "create_development_profile",
-    "create_production_profile",
-
-    # Tier 4: Match
+    # Tier 3: Match
     "ResumePosition",
     "ServiceOverride",
     "MatchOverrides",
@@ -143,4 +140,10 @@ __all__ = [
     "get_class_name",
     "validate_class_name",
     "create_model_to_universal_mapping",
+
+    # Infrastructure Config
+    "InfraConfig",
+    "get_infra_config",
+    "reset_config",
+    "PROJECT_ROOT",
 ]

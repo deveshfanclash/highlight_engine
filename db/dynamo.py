@@ -2,19 +2,19 @@
 DynamoDB Writer
 
 Batched writer for inference results with configurable flush intervals.
-Extracted and refactored from old_inference_code_for_reference/src/database/dynamodb_writer.py
 
-Key patterns preserved:
-- Batch buffering (WRITE_DELAY frames)
-- Time-based flush (WRITE_INTERVAL)
+Key patterns:
+- Batch buffering (configurable batch size)
+- Time-based flush (configurable interval)
 - Decimal conversion for DynamoDB
+- Local file fallback for testing
 """
 
 import os
 import time
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from decimal import Decimal
 from datetime import datetime
 from queue import Queue, Empty
@@ -41,13 +41,16 @@ class DynamoDBWriterConfig:
     queue_timeout: float = 5.0  # Timeout for queue.get()
 
     @classmethod
-    def from_env(cls, table_name: str) -> "DynamoDBWriterConfig":
-        """Create config from environment variables"""
+    def from_infra_config(cls, table_name: str) -> "DynamoDBWriterConfig":
+        """Create config from InfraConfig"""
+        from config.environment import get_infra_config
+        infra = get_infra_config()
+
         return cls(
             table_name=table_name,
-            region=os.getenv("AWS_REGION", "us-east-1"),
-            aws_access_key=os.getenv("AWS_ACCESS_KEY_DB"),
-            aws_secret_key=os.getenv("AWS_SECRET_KEY_DB"),
+            region=infra.aws_region,
+            aws_access_key=infra.aws_access_key,
+            aws_secret_key=infra.aws_secret_key,
         )
 
 
@@ -161,17 +164,11 @@ class DynamoDBWriter:
         overwrite_keys: Optional[List[str]] = None
     ) -> int:
         """
-        Write multiple items using DynamoDB batch_writer (efficient for bulk writes).
-
-        Uses batch_writer() which:
-        - Automatically batches items (max 25 per request, DynamoDB limit)
-        - Handles retries for unprocessed items
-        - Much more efficient than individual put_item() calls
+        Write multiple items using DynamoDB batch_writer.
 
         Args:
             items: List of items to write
             overwrite_keys: Primary key fields for upsert behavior
-                           (e.g., ["match_id", "ptstime"] for HLS metadata)
 
         Returns:
             Number of items written
@@ -183,8 +180,6 @@ class DynamoDBWriter:
         written = 0
 
         try:
-            # Use batch_writer for efficient bulk writes
-            # overwrite_by_pkeys allows upsert behavior (replace if exists)
             batch_kwargs = {}
             if overwrite_keys:
                 batch_kwargs["overwrite_by_pkeys"] = overwrite_keys
@@ -324,46 +319,6 @@ class DynamoDBWriter:
         self.flush()
 
     # =========================================================================
-    # CONVENIENCE METHODS FOR INFERENCE OUTPUT
-    # =========================================================================
-
-    def write_inference_result(
-        self,
-        match_id: str,
-        service_id: str,
-        model_id: str,
-        frame_number: int,
-        timestamp_ms: int,
-        detections: List[Dict[str, Any]],
-        processing_time_ms: int = 0
-    ):
-        """
-        Write inference result in standard format.
-
-        Args:
-            match_id: Match identifier
-            service_id: Service identifier
-            model_id: Model that produced detections
-            frame_number: Frame number
-            timestamp_ms: Frame timestamp in milliseconds
-            detections: List of detection dicts with class_name, class_id, confidence, bbox
-            processing_time_ms: Processing time for this frame
-        """
-        item = {
-            "pk": f"{match_id}#{service_id}",
-            "sk": frame_number,
-            "match_id": match_id,
-            "service_id": service_id,
-            "model_id": model_id,
-            "frame_number": frame_number,
-            "timestamp_ms": timestamp_ms,
-            "detections": detections,
-            "processing_time_ms": processing_time_ms,
-        }
-
-        self.write_item(item)
-
-    # =========================================================================
     # CONTEXT MANAGER
     # =========================================================================
 
@@ -376,33 +331,6 @@ class DynamoDBWriter:
 
 
 # =============================================================================
-# CONVENIENCE FUNCTIONS
-# =============================================================================
-
-def create_inference_writer(
-    table_name: str,
-    use_background: bool = True
-) -> DynamoDBWriter:
-    """
-    Create a DynamoDB writer for inference results.
-
-    Args:
-        table_name: DynamoDB table name
-        use_background: If True, start background writer thread
-
-    Returns:
-        Configured DynamoDBWriter
-    """
-    config = DynamoDBWriterConfig.from_env(table_name)
-    writer = DynamoDBWriter(config)
-
-    if use_background:
-        writer.start_background_writer()
-
-    return writer
-
-
-# =============================================================================
 # LOCAL FILE WRITER (For Testing)
 # =============================================================================
 
@@ -411,15 +339,7 @@ class LocalFileWriter:
     Local file writer for testing without DynamoDB.
 
     Writes output to JSON Lines files (.jsonl) in a specified directory.
-    Drop-in replacement for DynamoDBWriter in test mode.
-
-    Usage:
-        writer = LocalFileWriter("/tmp/test_output", "match_123")
-        writer.start_background_writer()
-        writer.queue_item({"frame_number": 1, "detections": [...]})
-        writer.stop()
-
-        # Output written to: /tmp/test_output/match_123_inference.jsonl
+    Drop-in replacement for DynamoDBWriter in local mode.
     """
 
     def __init__(self, output_dir: str, match_id: str, service_id: str = "inference"):
@@ -476,16 +396,7 @@ class LocalFileWriter:
         items: List[Dict[str, Any]],
         overwrite_keys: Optional[List[str]] = None
     ) -> int:
-        """
-        Write multiple items to file in a single operation.
-
-        Args:
-            items: List of items to write
-            overwrite_keys: Ignored for local files (included for API compatibility)
-
-        Returns:
-            Number of items written
-        """
+        """Write multiple items to file."""
         import json
 
         if not items:
@@ -561,30 +472,47 @@ class LocalFileWriter:
         return False
 
 
+# =============================================================================
+# FACTORY FUNCTION
+# =============================================================================
+
+# Type alias for writer
+WriterType = Union[DynamoDBWriter, LocalFileWriter]
+
+
 def create_writer(
     table_name: str = "inference_results",
     use_background: bool = True,
+    local_mode: bool = False,
     local_output_dir: Optional[str] = None,
     match_id: str = "test",
     service_id: str = "inference"
-):
+) -> WriterType:
     """
     Factory function to create appropriate writer based on mode.
 
     Args:
         table_name: DynamoDB table name (for DynamoDB mode)
         use_background: Use background writer thread
-        local_output_dir: If set, use LocalFileWriter instead of DynamoDB
+        local_mode: If True, use LocalFileWriter instead of DynamoDB
+        local_output_dir: Output directory for local mode (required if local_mode=True)
         match_id: Match ID (for local writer)
         service_id: Service ID (for local writer)
 
     Returns:
         DynamoDBWriter or LocalFileWriter
     """
-    if local_output_dir:
-        writer = LocalFileWriter(local_output_dir, match_id, service_id)
+    if local_mode or local_output_dir:
+        # Local mode - write to files
+        output_dir = local_output_dir
+        if not output_dir:
+            from config.environment import get_infra_config
+            output_dir = str(get_infra_config(local_mode=True).output_path)
+
+        writer = LocalFileWriter(output_dir, match_id, service_id)
     else:
-        config = DynamoDBWriterConfig.from_env(table_name)
+        # DynamoDB mode
+        config = DynamoDBWriterConfig.from_infra_config(table_name)
         writer = DynamoDBWriter(config)
 
     if use_background:

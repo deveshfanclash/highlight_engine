@@ -9,14 +9,10 @@ Handles resume position calculation for services based on different modes:
 
 import logging
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
-
-# Lazy import for boto3 to avoid import errors when not installed
-boto3 = None
-ClientError = Exception  # Fallback exception type
 
 
 class ResumeMode(str, Enum):
@@ -40,7 +36,7 @@ def get_resume_position(
     service_id: str,
     source_url: str,
     table_name: str = "inference_results",
-    region: str = "us-east-1",
+    local_mode: bool = False,
 ) -> ResumePosition:
     """
     Get the resume position based on the specified mode.
@@ -51,7 +47,7 @@ def get_resume_position(
         service_id: Service identifier
         source_url: Stream/file URL (used for 'latest' mode)
         table_name: DynamoDB table name for querying last written frame
-        region: AWS region
+        local_mode: If True, skip DynamoDB queries and default to start
 
     Returns:
         ResumePosition with frame_number, segment_number, and timestamp_ms
@@ -59,7 +55,10 @@ def get_resume_position(
     if mode == ResumeMode.START:
         return _get_start_position()
     elif mode == ResumeMode.CURRENT:
-        return _get_current_position(match_id, service_id, table_name, region)
+        if local_mode:
+            logger.info("Local mode enabled, skipping DB query for resume position")
+            return _get_start_position()
+        return _get_current_position(match_id, service_id, table_name)
     elif mode == ResumeMode.LATEST:
         return _get_latest_position(source_url)
     else:
@@ -86,7 +85,6 @@ def _get_current_position(
     match_id: str,
     service_id: str,
     table_name: str,
-    region: str
 ) -> ResumePosition:
     """
     Get position from last written frame in DB.
@@ -98,7 +96,6 @@ def _get_current_position(
         match_id: Match identifier
         service_id: Service identifier
         table_name: DynamoDB table name
-        region: AWS region
 
     Returns:
         ResumePosition with last written frame + 1, or start position if none found
@@ -110,8 +107,22 @@ def _get_current_position(
         logger.warning("boto3 not installed, cannot query DB for resume position. Starting from frame 0.")
         return _get_start_position()
 
+    # Get AWS config from environment
+    from config.environment import get_infra_config
+    infra = get_infra_config()
+
+    if not infra.can_use_dynamodb:
+        logger.info("DynamoDB not available (local mode), starting from frame 0")
+        return _get_start_position()
+
     try:
-        dynamodb = boto3.resource("dynamodb", region_name=region)
+        # Build connection kwargs
+        kwargs = {"region_name": infra.aws_region}
+        if infra.aws_access_key and infra.aws_secret_key:
+            kwargs["aws_access_key_id"] = infra.aws_access_key
+            kwargs["aws_secret_access_key"] = infra.aws_secret_key
+
+        dynamodb = boto3.resource("dynamodb", **kwargs)
         table = dynamodb.Table(table_name)
 
         pk = f"{match_id}#{service_id}"
@@ -150,15 +161,9 @@ def _get_current_position(
             )
             return _get_start_position()
 
-    except ClientError as e:
-        logger.warning(
-            f"Failed to query DynamoDB for resume position: {e}. "
-            f"Falling back to start position."
-        )
-        return _get_start_position()
     except Exception as e:
         logger.warning(
-            f"Unexpected error getting resume position: {e}. "
+            f"Failed to query DynamoDB for resume position: {e}. "
             f"Falling back to start position."
         )
         return _get_start_position()
@@ -171,17 +176,12 @@ def _get_latest_position(source_url: str) -> ResumePosition:
     For live streams, this would query the stream for the current position.
     For files, this typically means starting from the beginning.
 
-    Note: Full implementation would require stream-specific logic
-    (e.g., parsing HLS manifest for live edge).
-
     Args:
         source_url: Stream or file URL
 
     Returns:
         ResumePosition for current stream position
     """
-    # For now, return a position that signals "start from live edge"
-    # The input handler will interpret segment_number=-1 as "start from latest"
     logger.info(f"Resume mode: LATEST - starting from current stream position")
 
     # Check if it's likely a file (not a live stream)

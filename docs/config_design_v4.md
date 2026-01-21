@@ -93,12 +93,12 @@ deployments:
     output:
       # mode: "dynamodb"
       region: "us-east-1"
-      table_prefix: "prod_inference_"
-      default_batch_size: 25
-      default_flush_interval_ms: 100
+      # table_prefix: "prod_inference_"
+      # default_batch_size: 25
+      # default_flush_interval_ms: 100
 
     # Orchestrator settings
-    hls_head_start_seconds: 30          # Wait before starting other services
+    # hls_head_start_seconds: 30          # Wait before starting other services
 
     # AWS (credentials from environment variables)
     aws:

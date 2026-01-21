@@ -1,16 +1,16 @@
 """
 Configuration Loader
 
-4-Tier Configuration System:
+3-Tier Configuration System:
 - Tier 1: ModelRegistry - Pure ML model definitions
 - Tier 2: GameTemplate - Sport-specific logic
-- Tier 3: DeploymentProfile - Infrastructure configuration
-- Tier 4: MatchConfig - Runtime match configuration
+- Tier 3: MatchConfig - Runtime match configuration
+
+Infrastructure config is handled separately in config/environment.py
 
 Supports loading from:
 - YAML files (development/testing)
 - MongoDB (production)
-- Environment variables (overrides)
 """
 
 import os
@@ -41,11 +41,6 @@ from config.schemas.game import (
     ServiceTemplateUnion,
     create_service_template_from_dict,
 )
-from config.schemas.deployment import (
-    DeploymentProfile,
-    create_development_profile,
-    create_production_profile,
-)
 from config.schemas.match import (
     MatchConfig,
     MatchOverrides,
@@ -59,24 +54,21 @@ logger = logging.getLogger(__name__)
 
 class ConfigLoader:
     """
-    Unified configuration loader for the 4-tier system.
+    Unified configuration loader for the 3-tier system.
 
     Supports:
     - YAML files for development/testing
     - MongoDB for production
-    - Environment variable overrides
     - Caching for performance
 
     Usage:
         # Development (YAML)
         loader = ConfigLoader()
         game, models = loader.load_from_yaml("config/games/football.yaml")
-        deployment = loader.load_deployment_from_yaml("config/deployments/production.yaml")
 
         # Production (MongoDB)
         loader = ConfigLoader(mongo_uri="mongodb://...")
         game = loader.load_game_template("football")
-        deployment = loader.load_deployment_profile("production")
         models = loader.load_models_for_game(game)
 
         # Create match
@@ -84,7 +76,6 @@ class ConfigLoader:
             match_id="match_123",
             stream_url="https://...",
             game_id="football",
-            deployment_profile_id="production",
             overrides={"inference_settings": {"frame_skip": 2}}
         )
     """
@@ -269,58 +260,7 @@ class ConfigLoader:
         return game
 
     # =========================================================================
-    # TIER 3: DEPLOYMENT PROFILE
-    # =========================================================================
-
-    @staticmethod
-    def _parse_deployment_profile(data: Dict[str, Any]) -> DeploymentProfile:
-        """Parse deployment profile from dict"""
-        return DeploymentProfile(
-            profile_id=data["profile_id"],
-            profile_name=data.get("profile_name", ""),
-            environment=data.get("environment", "production"),
-            local_output_dir=data.get("local_output_dir"),
-            aws_region=data.get("aws_region", "us-east-1"),
-            db_batch_size=data.get("db_batch_size", 25),
-            db_flush_interval_ms=data.get("db_flush_interval_ms", 250),
-        )
-
-    def load_deployment_profile_from_yaml(self, yaml_path: str) -> DeploymentProfile:
-        """Load deployment profile from YAML file"""
-        with open(yaml_path, 'r') as f:
-            data = yaml.safe_load(f)
-        return self._parse_deployment_profile(data)
-
-    def load_deployment_profile(self, profile_id: str) -> Optional[DeploymentProfile]:
-        """Load deployment profile from MongoDB or defaults"""
-        cache_key = f"deployment:{profile_id}"
-        if self.cache_enabled and cache_key in self._cache:
-            return self._cache[cache_key]
-
-        # Check for built-in profiles first
-        if profile_id == "development":
-            return create_development_profile()
-        elif profile_id == "production":
-            return create_production_profile()
-
-        # Try MongoDB
-        if self.mongo_client:
-            collection = self._get_collection("deployment_profiles")
-            data = collection.find_one({"profile_id": profile_id})
-
-            if data:
-                data.pop("_id", None)
-                profile = self._parse_deployment_profile(data)
-
-                if self.cache_enabled:
-                    self._cache[cache_key] = profile
-
-                return profile
-
-        return None
-
-    # =========================================================================
-    # TIER 4: MATCH CONFIG
+    # TIER 3: MATCH CONFIG
     # =========================================================================
 
     def create_match(
@@ -328,7 +268,6 @@ class ConfigLoader:
         match_id: str,
         stream_url: str,
         game_id: str,
-        deployment_profile_id: str = "production",
         stream_type: str = "hls",
         overrides: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -341,7 +280,6 @@ class ConfigLoader:
             match_id: Unique match identifier
             stream_url: Stream URL
             game_id: Reference to game template
-            deployment_profile_id: Reference to deployment profile
             stream_type: Type of stream (hls, rtsp, mp4)
             overrides: Match-specific overrides
             metadata: Match metadata
@@ -354,7 +292,6 @@ class ConfigLoader:
             match_id=match_id,
             stream_url=stream_url,
             game_id=game_id,
-            deployment_profile_id=deployment_profile_id,
             stream_type=InputType(stream_type),
             overrides=overrides,
             metadata=metadata,
@@ -420,24 +357,20 @@ class ConfigLoader:
     def load_full_config(
         self,
         game_id: str,
-        deployment_profile_id: str = "production",
-    ) -> Tuple[GameTemplate, ModelRegistryConfig, DeploymentProfile]:
+    ) -> Tuple[GameTemplate, ModelRegistryConfig]:
         """
-        Load all three config tiers for a game.
+        Load game template and models for a game.
 
         Returns:
-            Tuple of (GameTemplate, ModelRegistryConfig, DeploymentProfile)
+            Tuple of (GameTemplate, ModelRegistryConfig)
         """
         game = self.load_game_template(game_id)
         if not game:
             raise ValueError(f"Game template not found: {game_id}")
 
         models = self.load_model_registry(game_id)
-        deployment = self.load_deployment_profile(deployment_profile_id)
-        if not deployment:
-            deployment = create_production_profile()
 
-        return game, models, deployment
+        return game, models
 
 
 # =============================================================================
@@ -453,11 +386,6 @@ def load_game_from_yaml(yaml_path: str) -> GameTemplate:
     """Load only game template from YAML"""
     game, _ = ConfigLoader.load_from_yaml(yaml_path)
     return game
-
-
-def load_deployment_from_yaml(yaml_path: str) -> DeploymentProfile:
-    """Load deployment profile from YAML"""
-    return ConfigLoader().load_deployment_profile_from_yaml(yaml_path)
 
 
 def load_config_from_env() -> Optional[Tuple[GameTemplate, ModelRegistryConfig]]:

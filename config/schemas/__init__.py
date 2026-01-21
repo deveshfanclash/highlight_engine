@@ -1,7 +1,7 @@
 """
 Configuration Schemas
 
-4-Tier Configuration System:
+3-Tier Configuration System:
 
 Tier 1: Model Registry (model.py)
     - Pure ML model definitions
@@ -13,15 +13,12 @@ Tier 2: Game Template (game.py)
     - Model assignments with roles
     - Service templates with settings
 
-Tier 3: Deployment Profile (deployment.py)
-    - Development vs Production settings
-    - Local file output or DynamoDB
-    - AWS region and timing settings
-
-Tier 4: Match Config (match.py)
+Tier 3: Match Config (match.py)
     - Runtime match configuration
     - Stream URL and match ID
     - Override mechanism
+
+Infrastructure config is handled separately in config/environment.py
 """
 
 # =============================================================================
@@ -66,17 +63,7 @@ from config.schemas.game import (
 )
 
 # =============================================================================
-# TIER 3: DEPLOYMENT PROFILE
-# =============================================================================
-from config.schemas.deployment import (
-    Environment,
-    DeploymentProfile,
-    create_development_profile,
-    create_production_profile,
-)
-
-# =============================================================================
-# TIER 4: MATCH CONFIG
+# TIER 3: MATCH CONFIG
 # =============================================================================
 from config.schemas.match import (
     ResumePosition,
@@ -114,7 +101,6 @@ __all__ = [
     "GameCategory",
     "MatchStatus",
     "OutputFormat",
-    "Environment",
 
     # Tier 1: Model
     "ClassMapping",
@@ -134,13 +120,7 @@ __all__ = [
     "create_service_template_from_dict",
     "create_game_template",
 
-    # Tier 3: Deployment
-    "Environment",
-    "DeploymentProfile",
-    "create_development_profile",
-    "create_production_profile",
-
-    # Tier 4: Match
+    # Tier 3: Match
     "ResumePosition",
     "ServiceOverride",
     "MatchOverrides",

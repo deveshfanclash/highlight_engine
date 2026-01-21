@@ -14,17 +14,17 @@
 # GAME TEMPLATE (Tier 2)
 # =============================================================================
 game_id: "football_v1"
-game_name: "Football / Soccer"
+game_name: "Football"
 description: "Football inference configuration with object detection"
 
 
 # =============================================================================
 # INFERENCE SETTINGS (Global defaults)
 # =============================================================================
-inference_settings:
-  target_fps: 25
-  frame_skip: 1                       # Process every frame (1 = no skip)
-  processing_resolution: [1280, 720]  # [width, height]
+# inference_settings:
+#   target_fps: 25
+#   frame_skip: 1                       # Process every frame (1 = no skip)
+#   processing_resolution: [1280, 720]  # [width, height]
 
 
 # =============================================================================
@@ -44,12 +44,12 @@ models:
     output_format: "bbox"
 
     # Model source (local path or S3 URL)
-    model_url: "/path/to/model.pt"
-    # model_url: "s3://models/yolo_football_v2.pt"
+    # model_url: "/path/to/model.pt"
+    model_url: "s3://models/yolo_football_v2.pt"
 
     # Native classes (what the model outputs)
-    native_classes: ["ball"]
-    native_class_ids: [0]
+    # native_classes: ["ball"]
+    # native_class_ids: [0]
 
     # Class mapping (model class ID -> universal class name)
     default_class_mapping:
@@ -60,13 +60,13 @@ models:
     # Default inference parameters
     default_params:
       confidence_threshold: 0.5
-      iou_threshold: 0.45
-      max_detections: 100
-      half_precision: false
+      # iou_threshold: 0.45
+      # max_detections: 100
+      # half_precision: false
 
     # Resource requirements
-    resources:
-      requires_gpu: false
+    # resources:
+      # requires_gpu: false
 
 
 # =============================================================================
@@ -90,18 +90,29 @@ services:
     enabled: true
 
     # Which model roles to use
-    model_roles: ["default"]
+    # model_roles: ["default"]
 
     # Output settings
     db_table_name: "inference_results"
     db_batch_size: 12
     db_flush_interval_ms: 250
+  
+addition_runtime:
+  - logging:
+    - level: "INFO"
+      enabled: true
+    - level: "WARNING"
+      enabled: true
+    - level: "ERROR"
+      enabled: true
+    - level: "CRITICAL"
+      enabled: true
 
 
 # =============================================================================
 # UNIVERSAL CLASS DEFINITIONS
 # =============================================================================
-universal_class_definitions:
-  BALL:
-    display_name: "Ball"
-    color: "#FFFF00"
+# universal_class_definitions:
+#   BALL:
+#     display_name: "Ball"
+#     color: "#FFFF00"
