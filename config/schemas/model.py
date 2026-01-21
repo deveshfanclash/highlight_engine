@@ -13,7 +13,7 @@ from config.schemas.enums import ModelType, ModelArchitecture
 class ModelParams(BaseModel):
     """Default inference parameters for a model."""
     confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    batch_size: int = Field(default=1, ge=1)
+    batch_size: int = Field(default=1, ge=1, description="Inference batch size for GPU efficiency (1=single frame, 8=recommended for throughput)")
     half_precision: bool = Field(default=False)
 
 

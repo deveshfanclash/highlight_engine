@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 
 from core.utils import get_video_resolution_and_fps, get_best_stream_url, frame_to_ms
+from core.source_router import SourceRouter
 
 logger = logging.getLogger(__name__)
 
@@ -136,24 +137,13 @@ class FrameProvider:
         """
         Determine if we should use OpenCV instead of FFmpeg.
 
+        Delegates to SourceRouter - the single source of truth for type detection.
+
         Uses OpenCV for local files (faster, no subprocess overhead).
         Uses FFmpeg for streams (HLS, RTSP) which require special handling.
         """
-        # Use OpenCV for local files
-        if self.config.stream_type in (StreamType.FILE, StreamType.MP4):
-            return True
-
-        # Also use OpenCV if the URL is actually a local file path
-        url = self.config.stream_url
-        if os.path.isfile(url):
-            return True
-
-        # Check common local file extensions
-        if url.lower().endswith(('.mp4', '.avi', '.mov', '.mkv', '.webm')):
-            if not url.startswith(('http://', 'https://', 'rtsp://', 'rtmp://')):
-                return True
-
-        return False
+        source_type = SourceRouter.detect(self.config.stream_url)
+        return not SourceRouter.needs_ffmpeg(source_type)
 
     def _resolve_stream_url(self) -> str:
         """Resolve the actual stream URL (handle HLS master playlists)"""

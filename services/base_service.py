@@ -12,12 +12,13 @@ import logging
 import signal
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 from datetime import datetime
 
 from config.schemas import InputType, ProcessingPattern
 from input_handlers import FrameInputHandler, FrameInputPacket
 from db.dynamo import DynamoDBWriter, LocalFileWriter, create_writer
+from core.batch_accumulator import BatchAccumulator, Batch
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,10 @@ class ServiceConfig:
     frame_skip: int = 1  # Process every Nth frame
     start_frame: int = 0  # For resume support
     start_segment: int = 1  # For HLS resume support
+
+    # Batching settings (for GPU efficiency)
+    # batch_size > 1 enables batched processing for ~3-8x throughput
+    inference_batch_size: int = 1  # Number of frames to process at once
 
     # Device settings
     device: str = "cpu"  # "cpu", "cuda:0", "cuda:1", etc.
@@ -173,6 +178,34 @@ class BaseService(ABC):
         """
         pass
 
+    def process_batch(
+        self,
+        frame_packets: List[FrameInputPacket]
+    ) -> List[Optional[Dict[str, Any]]]:
+        """
+        Process a batch of frames.
+
+        Override this method for efficient batched inference.
+        Default implementation calls process_frame for each frame (no speedup).
+
+        Args:
+            frame_packets: List of frame packets to process
+
+        Returns:
+            List of result dicts (same length as input), None entries skip writing
+        """
+        # Default: call process_frame for each (no batching benefit)
+        return [self.process_frame(pkt) for pkt in frame_packets]
+
+    @property
+    def supports_batching(self) -> bool:
+        """
+        Whether this service supports efficient batched processing.
+
+        Override to return True if process_batch is implemented efficiently.
+        """
+        return False
+
     @abstractmethod
     def cleanup(self):
         """
@@ -190,6 +223,7 @@ class BaseService(ABC):
         Main service loop.
 
         Processes frames from the input handler until stopped or stream ends.
+        Uses batched processing when inference_batch_size > 1 for better throughput.
         """
         if not self.setup():
             logger.error("Setup failed, cannot run service")
@@ -199,8 +233,25 @@ class BaseService(ABC):
         self._start_time = datetime.utcnow()
         self._setup_signal_handlers()
 
-        logger.info(f"Service {self.config.service_id} starting")
+        batch_size = self.config.inference_batch_size
 
+        if batch_size > 1 and self.supports_batching:
+            logger.info(
+                f"Service {self.config.service_id} starting "
+                f"(batched mode, batch_size={batch_size})"
+            )
+            self._run_batched(batch_size)
+        else:
+            if batch_size > 1 and not self.supports_batching:
+                logger.warning(
+                    f"Batch size {batch_size} requested but service doesn't support "
+                    f"efficient batching. Falling back to single-frame processing."
+                )
+            logger.info(f"Service {self.config.service_id} starting (single-frame mode)")
+            self._run_single()
+
+    def _run_single(self):
+        """Run loop processing one frame at a time."""
         try:
             for frame_packet in self._input_handler.iterate():
                 if not self._running:
@@ -214,34 +265,80 @@ class BaseService(ABC):
 
                 # Write result to DB if provided
                 if result is not None:
-                    # Add common fields
-                    result["pk"] = f"{self.config.match_id}#{self.config.service_id}"
-                    result["sk"] = frame_packet.sequence_number
-                    result["match_id"] = self.config.match_id
-                    result["service_id"] = self.config.service_id
-                    result["frame_number"] = frame_packet.sequence_number
-                    result["timestamp_ms"] = frame_packet.timestamp_ms
-                    result["processing_time_ms"] = int(processing_time)
-
-                    self._db_writer.queue_item(result)
+                    self._write_result(result, frame_packet, processing_time)
 
                 # Update statistics
                 self._frames_processed += 1
                 self._total_processing_time_ms += processing_time
 
                 # Log progress
-                if self._frames_processed % 500 == 0:
-                    avg_time = self._total_processing_time_ms / self._frames_processed
-                    logger.info(
-                        f"Processed {self._frames_processed} frames, "
-                        f"avg processing time: {avg_time:.1f}ms"
-                    )
+                self._log_progress()
 
         except Exception as e:
             logger.error(f"Error in service loop: {e}")
             self._error = str(e)
         finally:
             self.shutdown()
+
+    def _run_batched(self, batch_size: int):
+        """Run loop processing frames in batches for better GPU utilization."""
+        accumulator = BatchAccumulator(batch_size=batch_size)
+
+        try:
+            for batch in accumulator.batches(self._input_handler.iterate()):
+                if not self._running:
+                    logger.info("Service stopped by signal")
+                    break
+
+                # Process batch
+                start_time = datetime.utcnow()
+                results = self.process_batch(batch.items)
+                processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+                per_frame_time = processing_time / len(batch)
+
+                # Write results to DB
+                for frame_packet, result in zip(batch.items, results):
+                    if result is not None:
+                        self._write_result(result, frame_packet, per_frame_time)
+
+                # Update statistics
+                self._frames_processed += len(batch)
+                self._total_processing_time_ms += processing_time
+
+                # Log progress
+                self._log_progress()
+
+        except Exception as e:
+            logger.error(f"Error in batched service loop: {e}")
+            self._error = str(e)
+        finally:
+            self.shutdown()
+
+    def _write_result(
+        self,
+        result: Dict[str, Any],
+        frame_packet: FrameInputPacket,
+        processing_time: float
+    ):
+        """Write a result to the database with common fields."""
+        result["pk"] = f"{self.config.match_id}#{self.config.service_id}"
+        result["sk"] = frame_packet.sequence_number
+        result["match_id"] = self.config.match_id
+        result["service_id"] = self.config.service_id
+        result["frame_number"] = frame_packet.sequence_number
+        result["timestamp_ms"] = frame_packet.timestamp_ms
+        result["processing_time_ms"] = int(processing_time)
+
+        self._db_writer.queue_item(result)
+
+    def _log_progress(self):
+        """Log processing progress periodically."""
+        if self._frames_processed % 500 == 0:
+            avg_time = self._total_processing_time_ms / self._frames_processed
+            logger.info(
+                f"Processed {self._frames_processed} frames, "
+                f"avg processing time: {avg_time:.1f}ms"
+            )
 
     def stop(self):
         """Signal the service to stop"""

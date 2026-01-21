@@ -258,6 +258,101 @@ class PoseService(BaseService):
 
 
 # =============================================================================
+# CONFIG BUILDER (for ServiceRegistry)
+# =============================================================================
+
+def build_pose_config(
+    match_id: str,
+    source_url: str,
+    model_config: dict,
+    service_config: dict,
+    inference_settings: dict,
+    start_frame: int = 0,
+    start_segment: int = 0,
+    device: str = "cuda:0",
+    local_mode: bool = False,
+    output_dir: str = None,
+) -> PoseServiceConfig:
+    """
+    Build PoseServiceConfig from game config components.
+
+    This is the config builder registered with ServiceRegistry.
+    Encapsulates all knowledge of how to construct Pose configs.
+
+    Args:
+        match_id: Match identifier
+        source_url: Stream URL or file path
+        model_config: Model configuration dict
+        service_config: Service template dict
+        inference_settings: Inference settings dict
+        start_frame: Frame to start from (for resume)
+        start_segment: Segment to start from (for HLS resume)
+        device: Device to run on
+        local_mode: If True, output to local files
+        output_dir: Output directory for local mode
+
+    Returns:
+        Configured PoseServiceConfig
+    """
+    from core.source_router import SourceRouter
+
+    # Detect input type using SourceRouter
+    source_type = SourceRouter.detect(source_url)
+    input_type = SourceRouter.to_input_type(source_type)
+
+    # Extract model parameters
+    model_params = model_config.get("default_params", {})
+    processing_resolution = inference_settings.get("processing_resolution", [1280, 720])
+
+    return PoseServiceConfig(
+        # Identifiers
+        match_id=match_id,
+        service_id=f"pose_{model_config.get('model_id', 'unknown')}",
+
+        # Input
+        input_source=source_url,
+        input_type=input_type,
+
+        # Processing
+        target_width=processing_resolution[0] if processing_resolution else None,
+        target_height=processing_resolution[1] if len(processing_resolution) > 1 else None,
+        frame_skip=inference_settings.get("frame_skip", 1),
+        start_frame=start_frame,
+        start_segment=start_segment,
+
+        # Batching (for GPU efficiency)
+        inference_batch_size=model_params.get("batch_size", 1),
+
+        # Device
+        device=device,
+
+        # Database
+        db_table_name=service_config.get("db_table_name", "inference_results"),
+        db_batch_size=service_config.get("db_batch_size", 12),
+        db_flush_interval_ms=service_config.get("db_flush_interval_ms", 250),
+
+        # Local mode
+        local_mode=local_mode,
+        local_output_dir=output_dir,
+
+        # Model
+        model_id=model_config.get("model_id", ""),
+        model_url=model_config.get("model_url", ""),
+        model_path=model_config.get("model_path", ""),
+        model_architecture=model_config.get("model_architecture", "yolov8-pose"),
+
+        # Inference parameters
+        confidence_threshold=model_params.get("confidence_threshold", 0.5),
+        iou_threshold=model_params.get("iou_threshold", 0.45),
+        max_detections=model_params.get("max_detections", 100),
+        half_precision=model_params.get("half_precision", False),
+
+        # Keypoint settings
+        keypoint_confidence_threshold=service_config.get("keypoint_confidence_threshold", 0.5),
+    )
+
+
+# =============================================================================
 # CLI ENTRY POINT
 # =============================================================================
 

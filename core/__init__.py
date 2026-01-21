@@ -3,12 +3,15 @@ Core Module
 
 Contains foundational components used across all services:
 - Frame extraction from streams
+- Source type routing
+- Batch accumulation for GPU efficiency
 - Common utilities
-- Data structures
 - Resume logic
 """
 
 from core.frame_provider import FrameProvider, FramePacket
+from core.source_router import SourceRouter, SourceType, detect_source_type, needs_ffmpeg
+from core.batch_accumulator import BatchAccumulator, Batch, FrameBatchAccumulator, batch_iterate
 from core.utils import (
     frame_to_timecode,
     get_video_resolution_and_fps,
@@ -24,14 +27,27 @@ from core.resume import (
 )
 
 __all__ = [
+    # Frame extraction
     "FrameProvider",
     "FramePacket",
+    # Source routing
+    "SourceRouter",
+    "SourceType",
+    "detect_source_type",
+    "needs_ffmpeg",
+    # Batching
+    "BatchAccumulator",
+    "Batch",
+    "FrameBatchAccumulator",
+    "batch_iterate",
+    # Utilities
     "frame_to_timecode",
     "get_video_resolution_and_fps",
     "get_best_stream_url",
     "download_file",
     "normalize_bbox",
     "denormalize_bbox",
+    # Resume
     "ResumeMode",
     "ResumePosition",
     "get_resume_position",

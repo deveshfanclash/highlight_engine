@@ -26,14 +26,13 @@ Resume Modes:
 import argparse
 import logging
 import sys
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from config.loader import ConfigLoader
 from config.environment import get_infra_config
-from config.schemas import InputType, ServiceType
+from config.schemas import ServiceType
 from core.resume import ResumeMode, get_resume_position
-from services.od_service import ODService, ODServiceConfig
-from services.pose_service import PoseService, PoseServiceConfig
+from services.registry import ServiceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -45,110 +44,6 @@ def setup_logging(verbose: bool = False):
         level=level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)]
-    )
-
-
-def get_input_type(source_url: str) -> InputType:
-    """Determine input type from source URL"""
-    source_lower = source_url.lower()
-
-    if source_lower.endswith('.m3u8') or 'hls' in source_lower:
-        return InputType.HLS
-    elif source_lower.endswith('.mp4'):
-        return InputType.MP4
-    elif source_lower.startswith('/') or source_lower.startswith('file://'):
-        return InputType.FILE
-    elif source_lower.startswith('rtsp://'):
-        return InputType.RTSP
-    else:
-        return InputType.HLS
-
-
-def create_od_service_config(
-    match_id: str,
-    source_url: str,
-    model_config: Dict[str, Any],
-    service_config: Dict[str, Any],
-    inference_settings: Dict[str, Any],
-    start_frame: int = 0,
-    start_segment: int = 0,
-    device: str = "cuda:0",
-    local_mode: bool = False,
-    output_dir: Optional[str] = None,
-) -> ODServiceConfig:
-    """Create ODServiceConfig from game config components."""
-    input_type = get_input_type(source_url)
-    model_params = model_config.get("default_params", {})
-    processing_resolution = inference_settings.get("processing_resolution", [1280, 720])
-
-    return ODServiceConfig(
-        match_id=match_id,
-        service_id=f"od_{model_config.get('model_id', 'unknown')}",
-        input_source=source_url,
-        input_type=input_type,
-        target_width=processing_resolution[0] if processing_resolution else None,
-        target_height=processing_resolution[1] if len(processing_resolution) > 1 else None,
-        frame_skip=inference_settings.get("frame_skip", 1),
-        start_frame=start_frame,
-        start_segment=start_segment,
-        device=device,
-        db_table_name=service_config.get("db_table_name", "inference_results"),
-        db_batch_size=service_config.get("db_batch_size", 12),
-        db_flush_interval_ms=service_config.get("db_flush_interval_ms", 250),
-        local_mode=local_mode,
-        local_output_dir=output_dir,
-        model_id=model_config.get("model_id", ""),
-        model_url=model_config.get("model_url", ""),
-        model_path=model_config.get("model_path", ""),
-        confidence_threshold=model_params.get("confidence_threshold", 0.5),
-        iou_threshold=model_params.get("iou_threshold", 0.45),
-        max_detections=model_params.get("max_detections", 100),
-        half_precision=model_params.get("half_precision", False),
-        classes_to_detect=model_config.get("classes_to_detect", []),
-    )
-
-
-def create_pose_service_config(
-    match_id: str,
-    source_url: str,
-    model_config: Dict[str, Any],
-    service_config: Dict[str, Any],
-    inference_settings: Dict[str, Any],
-    start_frame: int = 0,
-    start_segment: int = 0,
-    device: str = "cuda:0",
-    local_mode: bool = False,
-    output_dir: Optional[str] = None,
-) -> PoseServiceConfig:
-    """Create PoseServiceConfig from game config components"""
-    input_type = get_input_type(source_url)
-    model_params = model_config.get("default_params", {})
-    processing_resolution = inference_settings.get("processing_resolution", [1280, 720])
-
-    return PoseServiceConfig(
-        match_id=match_id,
-        service_id=f"pose_{model_config.get('model_id', 'unknown')}",
-        input_source=source_url,
-        input_type=input_type,
-        target_width=processing_resolution[0] if processing_resolution else None,
-        target_height=processing_resolution[1] if len(processing_resolution) > 1 else None,
-        frame_skip=inference_settings.get("frame_skip", 1),
-        start_frame=start_frame,
-        start_segment=start_segment,
-        device=device,
-        db_table_name=service_config.get("db_table_name", "inference_results"),
-        db_batch_size=service_config.get("db_batch_size", 12),
-        db_flush_interval_ms=service_config.get("db_flush_interval_ms", 250),
-        local_mode=local_mode,
-        local_output_dir=output_dir,
-        model_id=model_config.get("model_id", ""),
-        model_url=model_config.get("model_url", ""),
-        model_architecture=model_config.get("model_architecture", "yolov8-pose"),
-        confidence_threshold=model_params.get("confidence_threshold", 0.5),
-        iou_threshold=model_params.get("iou_threshold", 0.45),
-        max_detections=model_params.get("max_detections", 100),
-        half_precision=model_params.get("half_precision", False),
-        keypoint_confidence_threshold=service_config.get("keypoint_confidence_threshold", 0.5),
     )
 
 
@@ -252,13 +147,14 @@ def run_service(
         f"segment={resume_position.segment_number}"
     )
 
-    # Create service config
+    # Create service using ServiceRegistry
+    # The registry handles config building and service instantiation
     inference_settings = game_template.inference_settings.model_dump()
     service_config_dict = target_service.model_dump()
 
-    # Create and run service based on type
-    if target_service.service_type == ServiceType.OBJECT_DETECTION:
-        config = create_od_service_config(
+    try:
+        service = ServiceRegistry.create(
+            service_type=target_service.service_type,
             match_id=match_id,
             source_url=source_url,
             model_config=model_config,
@@ -270,25 +166,8 @@ def run_service(
             local_mode=local_mode,
             output_dir=output_dir,
         )
-        service = ODService(config)
-
-    elif target_service.service_type == ServiceType.POSE_ESTIMATION:
-        config = create_pose_service_config(
-            match_id=match_id,
-            source_url=source_url,
-            model_config=model_config,
-            service_config=service_config_dict,
-            inference_settings=inference_settings,
-            start_frame=max(0, resume_position.frame_number),
-            start_segment=max(0, resume_position.segment_number),
-            device=device,
-            local_mode=local_mode,
-            output_dir=output_dir,
-        )
-        service = PoseService(config)
-
-    else:
-        logger.error(f"Unsupported service type: {target_service.service_type}")
+    except ValueError as e:
+        logger.error(f"Failed to create service: {e}")
         return
 
     # Run the service (blocking)
