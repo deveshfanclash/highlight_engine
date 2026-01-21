@@ -94,8 +94,7 @@ def get_video_resolution_and_fps(
     Args:
         source_path: Local file path or video stream URL (.mp4 or .m3u8)
         use_avg_frame_rate: If True, use avg_frame_rate (actual delivered rate).
-                           If False, use r_frame_rate (container rate, like old code).
-                           Default False for backward compatibility.
+                           If False, use r_frame_rate (container rate).
 
     Returns:
         Tuple of (width, height, fps) or (None, None, None) on error

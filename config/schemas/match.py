@@ -107,17 +107,6 @@ class MatchMetadata(BaseModel):
     tournament_id: Optional[str] = None
     # tournament_name: Optional[str] = None
     # season: Optional[str] = None
-
-    # Teams (if applicable)
-    # home_team: Optional[str] = None
-    # away_team: Optional[str] = None
-    # teams: List[str] = Field(default_factory=list)
-
-    # Scheduling
-    # scheduled_start: Optional[datetime] = None
-    # scheduled_end: Optional[datetime] = None
-
-    # Source
     # broadcaster: Optional[str] = None
     # stream_quality: Optional[str] = None
 
@@ -188,12 +177,6 @@ class MatchConfig(BaseModel):
 
     # Timing
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    # started_at: Optional[datetime] = None
-    # completed_at: Optional[datetime] = None
-
-    # Error tracking
-    # error_message: Optional[str] = None
-    # retry_count: int = Field(default=0)
 
     # -------------------------------------------------------------------------
     # METADATA

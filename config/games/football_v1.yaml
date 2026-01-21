@@ -1,0 +1,107 @@
+# =============================================================================
+# FOOTBALL GAME CONFIG (v4)
+# =============================================================================
+# Usage:
+#   python main.py \
+#     --game-config config/games/football_v1.yaml \
+#     --match-id test_123 \
+#     --source /path/to/video.mp4 \
+#     --resume start
+# =============================================================================
+
+
+# =============================================================================
+# GAME TEMPLATE (Tier 2)
+# =============================================================================
+game_id: "football_v1"
+game_name: "Football / Soccer"
+description: "Football inference configuration with object detection"
+
+
+# =============================================================================
+# INFERENCE SETTINGS (Global defaults)
+# =============================================================================
+inference_settings:
+  target_fps: 25
+  frame_skip: 1                       # Process every frame (1 = no skip)
+  processing_resolution: [1280, 720]  # [width, height]
+
+
+# =============================================================================
+# MODELS (Tier 1 - Model Registry)
+# =============================================================================
+models:
+  # -------------------------------------------------------------------------
+  # Object Detection Model
+  # -------------------------------------------------------------------------
+  - model_id: "yolo_football_v2"
+    model_name: "YOLO Football Detector v2"
+    description: "YOLOv8 model trained on football/soccer footage"
+
+    # Model type and architecture
+    model_type: "object_detection"
+    model_architecture: "yolov8"
+    output_format: "bbox"
+
+    # Model source (local path or S3 URL)
+    model_url: "/path/to/model.pt"
+    # model_url: "s3://models/yolo_football_v2.pt"
+
+    # Native classes (what the model outputs)
+    native_classes: ["ball"]
+    native_class_ids: [0]
+
+    # Class mapping (model class ID -> universal class name)
+    default_class_mapping:
+      - model_class_id: 0
+        model_class_name: "ball"
+        universal_class_name: "BALL"
+
+    # Default inference parameters
+    default_params:
+      confidence_threshold: 0.5
+      iou_threshold: 0.45
+      max_detections: 100
+      half_precision: false
+
+    # Resource requirements
+    resources:
+      requires_gpu: false
+
+
+# =============================================================================
+# MODEL ASSIGNMENTS (How models are used in this game)
+# =============================================================================
+model_assignments:
+  - model_id: "yolo_football_v2"
+    role: "default"
+    priority: 1
+    class_filter: []  # Empty = use all classes
+
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+  # -------------------------------------------------------------------------
+  # Object Detection Service
+  # -------------------------------------------------------------------------
+  - service_type: "object_detection"
+    enabled: true
+
+    # Which model roles to use
+    model_roles: ["default"]
+
+    # Output settings
+    db_table_name: "inference_results"
+    db_batch_size: 12
+    db_flush_interval_ms: 250
+
+
+# =============================================================================
+# UNIVERSAL CLASS DEFINITIONS
+# =============================================================================
+universal_class_definitions:
+  BALL:
+    display_name: "Ball"
+    color: "#FFFF00"

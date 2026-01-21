@@ -56,47 +56,46 @@ class InferenceOutput(BaseModel):
         return f"{match_id}#{service_id}"
 
 
-class CameraViewOutput(BaseModel):
+class Keypoint(BaseModel):
+    """Single keypoint in pose estimation"""
+    x: float = Field(..., ge=0.0, le=1.0, description="Normalized x coordinate")
+    y: float = Field(..., ge=0.0, le=1.0, description="Normalized y coordinate")
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    name: Optional[str] = Field(None, description="Keypoint name (e.g., 'left_shoulder')")
+
+
+class PoseDetection(BaseModel):
+    """Single pose detection result"""
+    person_id: Optional[int] = Field(None, description="Tracked person ID if available")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Detection confidence")
+    bbox: Optional[BoundingBox] = Field(None, description="Bounding box of the person")
+    keypoints: List[Keypoint] = Field(default_factory=list)
+
+
+class PoseOutput(BaseModel):
     """
-    Output schema for camera view detection results.
+    Output schema for pose estimation results.
     Written to DynamoDB table: inference_results (same table, different service_id)
+
+    PK: {match_id}#{service_id}
+    SK: {frame_number}
     """
-    pk: str
-    sk: int
+    pk: str = Field(..., description="Partition key: match_id#service_id")
+    sk: int = Field(..., description="Sort key: frame_number")
 
     match_id: str
-    service_id: str = Field(default="camera_view")
+    service_id: str = Field(..., description="Service identifier")
+    model_id: str = Field(..., description="Model that produced these detections")
     frame_number: int
-    timestamp_ms: int
+    timestamp_ms: int = Field(..., description="Frame timestamp in video (milliseconds)")
 
-    # Camera view specific
-    is_camera_cut: bool
-    phash_diff: Optional[int] = None
-    histogram_correlation: Optional[float] = None
+    # Pose detections
+    poses: List[PoseDetection] = Field(default_factory=list)
 
+    # Metadata
+    processing_time_ms: int = Field(..., description="Time to process this frame")
     written_at: datetime = Field(default_factory=datetime.utcnow)
 
-
-class HLSMetadataOutput(BaseModel):
-    """
-    Output schema for HLS metadata service.
-    """
-    pk: str
-    sk: int
-
-    match_id: str
-    service_id: str = Field(default="hls_metadata")
-    segment_number: int
-    frame_start: int
-    frame_end: int
-    timestamp_ms: int
-
-    # Segment metadata
-    segment_url: str
-    segment_duration_seconds: float
-    fps: float
-
-    written_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-# Other output schemas classes can be added here to test out in between data structures
+    @classmethod
+    def create_pk(cls, match_id: str, service_id: str) -> str:
+        return f"{match_id}#{service_id}"

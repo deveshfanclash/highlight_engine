@@ -96,28 +96,6 @@ class ResourceRequirements(BaseModel):
     #     default=4000,
     #     description="Minimum GPU memory in MB"
     # )
-    # recommended_gpu_memory_mb: int = Field(
-    #     default=8000,
-    #     description="Recommended GPU memory for optimal performance"
-    # )
-
-    # CPU requirements
-    # min_cpu_cores: int = Field(default=2)
-    # min_memory_mb: int = Field(default=4000)
-
-    # Performance hints
-    # estimated_inference_ms: int = Field(
-    #     default=50,
-    #     description="Expected inference time per frame (for capacity planning)"
-    # )
-    # supports_batching: bool = Field(
-    #     default=True,
-    #     description="Can this model process batches efficiently?"
-    # )
-    # max_batch_size: int = Field(
-    #     default=32,
-    #     description="Maximum efficient batch size"
-    # )
 
 
 # =============================================================================

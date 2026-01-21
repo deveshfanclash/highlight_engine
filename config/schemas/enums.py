@@ -10,11 +10,7 @@ from enum import Enum
 class ModelType(str, Enum):
     """Types of ML models"""
     OBJECT_DETECTION = "object_detection"
-    SEGMENTATION = "segmentation"
     POSE_ESTIMATION = "pose_estimation"
-    CLASSIFICATION = "classification"
-    AUDIO = "audio"
-    VLM = "vlm"  # Vision-Language Model
 
 
 class ModelArchitecture(str, Enum):
@@ -22,25 +18,15 @@ class ModelArchitecture(str, Enum):
     YOLO_V8 = "yolov8"
     YOLO_V11 = "yolov11"
     YOLO_V12 = "yolov12"
-    YOLO_SEG = "yolov8-seg"
     YOLO_POSE = "yolov8-pose"
-    RF_DETR = "rf_detr"
-    SAM = "sam"
-    WHISPER = "whisper"
-    GEMINI = "gemini"
     CUSTOM = "custom"
 
 
 class ServiceType(str, Enum):
     """Types of inference services"""
     OBJECT_DETECTION = "object_detection"
-    CAMERA_VIEW = "camera_view"
-    SEGMENTATION = "segmentation"
     POSE_ESTIMATION = "pose_estimation"
     REPLAY_DETECTION = "replay_detection"
-    EVENT_DETECTION = "event_detection"
-    AUDIO_ANALYSIS = "audio_analysis"
-    HLS_METADATA = "hls_metadata"
 
 
 class InputType(str, Enum):
@@ -49,23 +35,19 @@ class InputType(str, Enum):
     RTSP = "rtsp"
     MP4 = "mp4"
     FILE = "file"
-    AUDIO = "audio"
-    CLIP = "clip"
 
 
 class ProcessingPattern(str, Enum):
     """Processing patterns for services"""
     FRAME_BY_FRAME = "frame_by_frame"
-    CLIP_BASED = "clip_based"
-    AUDIO_BASED = "audio_based"
-    FULL_VIDEO = "full_video"
+    FRAME_BATCHES = "frame_batches"
 
 
 class DeviceType(str, Enum):
     """Device types for inference"""
     CPU = "cpu"
     GPU = "gpu"
-    # Specific GPU can be "cuda:0", "cuda:1", etc.
+    MPS = "mps"
 
 
 class GameCategory(str, Enum):
@@ -74,7 +56,6 @@ class GameCategory(str, Enum):
     RACKET_SPORT = "racket_sport"
     COMBAT_SPORT = "combat_sport"
     ATHLETICS = "athletics"
-    ESPORTS = "esports"
     OTHER = "other"
 
 
@@ -90,8 +71,4 @@ class MatchStatus(str, Enum):
 class OutputFormat(str, Enum):
     """Output formats for model results"""
     BBOX = "bbox"
-    BBOX_WITH_MASK = "bbox_with_mask"
-    MASK = "mask"
     KEYPOINTS = "keypoints"
-    EMBEDDING = "embedding"
-    TEXT = "text"

@@ -35,25 +35,9 @@ def test(data):
 
         # Create process objects
         process1 = multiprocessing.Process(target=real_time_inference, args=(data,))
-        process2 = multiprocessing.Process(target=camera_view_stream, args=(data,))
-        process3 = multiprocessing.Process(
-            target=hls_stream_metadata_write, args=(data,)
-        )
-
-        # Start hls_stream_metadata_write immediately
-        logger.info("Starting hls_stream_metadata_write process immediately")
-        process3.start()
-
-        # Wait 30 seconds before starting the other two processes
-        logger.info(
-            "Waiting 30 seconds before starting real_time_inference and camera_view_stream processes"
-        )
-        time.sleep(30)
-
-        # Start real_time_inference and camera_view_stream after 30 seconds
+        # Start real_time_inference and camera_view_stream after 30 seconds of hls
         logger.info("Starting real_time_inference and camera_view_stream processes")
         process1.start()
-        process2.start()
 
 
 def parse_args():

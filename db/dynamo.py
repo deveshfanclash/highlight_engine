@@ -363,43 +363,6 @@ class DynamoDBWriter:
 
         self.write_item(item)
 
-    def write_camera_view_result(
-        self,
-        match_id: str,
-        frame_number: int,
-        timestamp_ms: int,
-        is_camera_cut: bool,
-        phash_diff: Optional[int] = None,
-        histogram_correlation: Optional[float] = None
-    ):
-        """
-        Write camera view detection result.
-
-        Args:
-            match_id: Match identifier
-            frame_number: Frame number
-            timestamp_ms: Frame timestamp
-            is_camera_cut: Whether a camera cut was detected
-            phash_diff: Perceptual hash difference (optional)
-            histogram_correlation: Histogram correlation value (optional)
-        """
-        item = {
-            "pk": f"{match_id}#camera_view",
-            "sk": frame_number,
-            "match_id": match_id,
-            "service_id": "camera_view",
-            "frame_number": frame_number,
-            "timestamp_ms": timestamp_ms,
-            "is_camera_cut": is_camera_cut,
-        }
-
-        if phash_diff is not None:
-            item["phash_diff"] = phash_diff
-        if histogram_correlation is not None:
-            item["histogram_correlation"] = histogram_correlation
-
-        self.write_item(item)
-
     # =========================================================================
     # CONTEXT MANAGER
     # =========================================================================

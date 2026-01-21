@@ -18,69 +18,6 @@ class Environment(str, Enum):
     DEVELOPMENT = "development"
     PRODUCTION = "production"
 
-class InstanceType(str, Enum):
-    """Common AWS instance types for inference"""
-    # CPU instances
-    C5_LARGE = "c5.large"
-    C5_XLARGE = "c5.xlarge"
-    C5_2XLARGE = "c5.2xlarge"
-    C5_4XLARGE = "c5.4xlarge"
-
-    # GPU instances (T4)
-    G4DN_XLARGE = "g4dn.xlarge"
-    G4DN_2XLARGE = "g4dn.2xlarge"
-    G4DN_4XLARGE = "g4dn.4xlarge"
-    G4DN_12XLARGE = "g4dn.12xlarge"
-
-    # GPU instances (A10G)
-    G5_XLARGE = "g5.xlarge"
-    G5_2XLARGE = "g5.2xlarge"
-    G5_4XLARGE = "g5.4xlarge"
-    G5_12XLARGE = "g5.12xlarge"
-
-    # Let Batch choose
-    OPTIMAL = "optimal"
-
-
-# =============================================================================
-# INSTANCE ASSIGNMENT
-# =============================================================================
-
-class InstanceAssignment(BaseModel):
-    """
-    Maps a service pattern to specific infrastructure.
-
-    Uses pattern matching:
-    - "od_*" matches all OD services (od_football_v2, od_cricket_v1, etc.)
-    - "camera_view" matches exactly camera_view
-    - "*" matches everything (default/fallback)
-    """
-    # Pattern matching
-    service_pattern: str = Field(
-        ...,
-        description="Service ID pattern (supports * wildcard). Examples: 'od_*', 'camera_view', '*'"
-    )
-
-    # AWS Batch queue
-    queue: str = Field(..., description="AWS Batch queue name")
-
-    # Instance configuration
-    instance_type: str = Field(
-        default="optimal",
-        description="EC2 instance type or 'optimal' for Batch to choose"
-    )
-
-    # Resource requirements
-    vcpus: int = Field(default=0, ge=0, description="vCPU requirement (0 = use job definition default)")
-    memory_mb: int = Field(default=0, ge=0, description="Memory in MB (0 = use job definition default)")
-    gpu_count: int = Field(default=0, ge=0, description="GPU count (0 = no GPU required)")
-
-    # Priority (higher = matched first when multiple patterns match)
-    priority: int = Field(default=0, description="Match priority (higher = checked first)")
-
-    class Config:
-        use_enum_values = True
-
 # =============================================================================
 # DEPLOYMENT PROFILE
 # =============================================================================
@@ -120,12 +57,6 @@ class DeploymentProfile(BaseModel):
         description="Flush interval for buffered writes"
     )
 
-    # Orchestrator timing
-    hls_metadata_head_start_seconds: int = Field(
-        default=30,
-        description="Seconds to wait after HLS metadata starts before other services"
-    )
-
     class Config:
         use_enum_values = True
 
@@ -155,7 +86,6 @@ def create_development_profile(
         profile_name="Development",
         environment=Environment.DEVELOPMENT,
         local_output_dir=local_output_dir,
-        hls_metadata_head_start_seconds=10,  # Shorter delay for dev
     )
 
 
@@ -174,5 +104,4 @@ def create_production_profile(
         aws_region=aws_region,
         db_batch_size=25,
         db_flush_interval_ms=250,
-        hls_metadata_head_start_seconds=30,
     )

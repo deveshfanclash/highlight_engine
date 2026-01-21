@@ -1,0 +1,130 @@
+# =============================================================================
+# FOOTBALL POSE ESTIMATION CONFIG (v4)
+# =============================================================================
+# Football configuration with pose estimation service.
+#
+# Usage:
+#   python main.py \
+#     --game-config config/games/football_pose_v1.yaml \
+#     --match-id test_123 \
+#     --source /path/to/video.mp4 \
+#     --resume start \
+#     --service-type pose_estimation
+# =============================================================================
+
+
+# =============================================================================
+# GAME TEMPLATE (Tier 2)
+# =============================================================================
+game_id: "football_pose_v1"
+game_name: "Football with Pose Estimation"
+description: "Football inference with object detection and pose estimation"
+
+
+# =============================================================================
+# INFERENCE SETTINGS
+# =============================================================================
+inference_settings:
+  target_fps: 25
+  frame_skip: 1
+  processing_resolution: [1280, 720]
+
+
+# =============================================================================
+# MODELS
+# =============================================================================
+models:
+  # -------------------------------------------------------------------------
+  # Object Detection Model
+  # -------------------------------------------------------------------------
+  - model_id: "yolo_football_v2"
+    model_name: "YOLO Football Detector v2"
+    model_type: "object_detection"
+    model_architecture: "yolov8"
+    output_format: "bbox"
+    model_url: "/path/to/model.pt"
+    native_classes: ["ball"]
+    native_class_ids: [0]
+    default_class_mapping:
+      - model_class_id: 0
+        model_class_name: "ball"
+        universal_class_name: "BALL"
+    default_params:
+      confidence_threshold: 0.5
+      iou_threshold: 0.45
+    resources:
+      requires_gpu: false
+
+  # -------------------------------------------------------------------------
+  # Pose Estimation Model
+  # -------------------------------------------------------------------------
+  - model_id: "yolov8n_pose"
+    model_name: "YOLOv8 Nano Pose"
+    model_type: "pose_estimation"
+    model_architecture: "yolov8-pose"
+    output_format: "keypoints"
+    model_url: "yolov8n-pose.pt"  # Will download from ultralytics
+    native_classes: ["person"]
+    native_class_ids: [0]
+    default_class_mapping:
+      - model_class_id: 0
+        model_class_name: "person"
+        universal_class_name: "PERSON"
+    default_params:
+      confidence_threshold: 0.5
+      iou_threshold: 0.45
+    resources:
+      requires_gpu: true
+
+
+# =============================================================================
+# MODEL ASSIGNMENTS
+# =============================================================================
+model_assignments:
+  - model_id: "yolo_football_v2"
+    role: "default"
+    priority: 1
+    class_filter: []
+
+  - model_id: "yolov8n_pose"
+    role: "pose"
+    priority: 2
+    class_filter: []
+
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+  # -------------------------------------------------------------------------
+  # Object Detection Service
+  # -------------------------------------------------------------------------
+  - service_type: "object_detection"
+    enabled: true
+    model_roles: ["default"]
+    db_table_name: "inference_results"
+    db_batch_size: 12
+    db_flush_interval_ms: 250
+
+  # -------------------------------------------------------------------------
+  # Pose Estimation Service
+  # -------------------------------------------------------------------------
+  - service_type: "pose_estimation"
+    enabled: true
+    model_roles: ["pose"]
+    keypoint_confidence_threshold: 0.5
+    db_table_name: "inference_results"
+    db_batch_size: 12
+    db_flush_interval_ms: 250
+
+
+# =============================================================================
+# UNIVERSAL CLASS DEFINITIONS
+# =============================================================================
+universal_class_definitions:
+  BALL:
+    display_name: "Ball"
+    color: "#FFFF00"
+  PERSON:
+    display_name: "Person"
+    color: "#00FF00"

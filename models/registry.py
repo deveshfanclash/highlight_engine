@@ -27,11 +27,7 @@ ARCHITECTURE_IMPLEMENTATIONS: Dict[ModelArchitecture, Type[BaseModel]] = {
     ModelArchitecture.YOLO_V8: YOLOModel,
     ModelArchitecture.YOLO_V11: YOLOModel,
     ModelArchitecture.YOLO_V12: YOLOModel,
-    ModelArchitecture.YOLO_SEG: YOLOModel,
     ModelArchitecture.YOLO_POSE: YOLOModel,
-    # Future: Add more architectures
-    # ModelArchitecture.RF_DETR: RFDETRModel,
-    # ModelArchitecture.SAM: SAMModel,
 }
 
 

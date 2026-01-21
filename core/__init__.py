@@ -5,6 +5,7 @@ Contains foundational components used across all services:
 - Frame extraction from streams
 - Common utilities
 - Data structures
+- Resume logic
 """
 
 from core.frame_provider import FrameProvider, FramePacket
@@ -16,6 +17,11 @@ from core.utils import (
     normalize_bbox,
     denormalize_bbox,
 )
+from core.resume import (
+    ResumeMode,
+    ResumePosition,
+    get_resume_position,
+)
 
 __all__ = [
     "FrameProvider",
@@ -26,4 +32,7 @@ __all__ = [
     "download_file",
     "normalize_bbox",
     "denormalize_bbox",
+    "ResumeMode",
+    "ResumePosition",
+    "get_resume_position",
 ]

@@ -54,23 +54,13 @@ from config.schemas.model import (
 # TIER 2: GAME TEMPLATE
 # =============================================================================
 from config.schemas.game import (
-    # Model assignment
     ModelAssignment,
-    # Service templates
     BaseServiceTemplate,
     ODServiceTemplate,
-    CameraViewServiceTemplate,
-    SegmentationServiceTemplate,
-    HLSMetadataServiceTemplate,
-    ReplayDetectionServiceTemplate,
-    EventDetectionServiceTemplate,
-    AudioAnalysisServiceTemplate,
+    PoseServiceTemplate,
     ServiceTemplateUnion,
-    # Settings
     InferenceSettings,
-    # Main config
     GameTemplate,
-    # Factory
     create_service_template_from_dict,
     create_game_template,
 )
@@ -104,8 +94,9 @@ from config.schemas.output import (
     BoundingBox,
     Detection,
     InferenceOutput,
-    CameraViewOutput,
-    HLSMetadataOutput,
+    Keypoint,
+    PoseDetection,
+    PoseOutput,
 )
 
 
@@ -136,12 +127,7 @@ __all__ = [
     "ModelAssignment",
     "BaseServiceTemplate",
     "ODServiceTemplate",
-    "CameraViewServiceTemplate",
-    "SegmentationServiceTemplate",
-    "HLSMetadataServiceTemplate",
-    "ReplayDetectionServiceTemplate",
-    "EventDetectionServiceTemplate",
-    "AudioAnalysisServiceTemplate",
+    "PoseServiceTemplate",
     "ServiceTemplateUnion",
     "InferenceSettings",
     "GameTemplate",
@@ -166,7 +152,7 @@ __all__ = [
     "BoundingBox",
     "Detection",
     "InferenceOutput",
-    "CameraViewOutput",
-    "HLSMetadataOutput",
-
+    "Keypoint",
+    "PoseDetection",
+    "PoseOutput",
 ]

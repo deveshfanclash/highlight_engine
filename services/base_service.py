@@ -4,11 +4,8 @@ Base Service
 Abstract base class for all inference services.
 Defines the common lifecycle and interface that all services must implement.
 
-Configuration Hierarchy:
-- config/schemas.py::ServiceConfig - "What to run" (from MongoDB/YAML game config)
-- ServiceRunConfig (here) - "How to run it" (runtime config with stream, match ID, etc.)
-
-The orchestrator creates ServiceRunConfig by combining GameConfig + MatchConfig.
+ServiceConfig defines runtime configuration (stream, match ID, device, etc.)
+Extended by specific configs (ODServiceConfig, PoseServiceConfig).
 """
 
 import os
@@ -27,16 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ServiceRunConfig:
+class ServiceConfig:
     """
     Runtime configuration for running a service.
 
-    This is the "how to run" config created by combining:
-    - GameConfig.services[n] (what service type, params)
-    - MatchConfig (stream URL, match ID)
-    - InferenceSettings (resolution, frame skip)
-
-    Extended by specific configs (ODServiceConfig, CameraViewServiceConfig)
+    Extended by specific configs (ODServiceConfig, PoseServiceConfig).
     """
     # Identifiers
     match_id: str
@@ -66,16 +58,6 @@ class ServiceRunConfig:
 
     # Additional params (service-specific)
     params: Dict[str, Any] = field(default_factory=dict)
-
-    # Backward compatibility property
-    @property
-    def stream_url(self) -> str:
-        """Alias for input_source for backward compatibility"""
-        return self.input_source
-
-
-# Backward compatibility alias
-ServiceConfig = ServiceRunConfig
 
 
 class BaseService(ABC):
@@ -120,16 +102,6 @@ class BaseService(ABC):
             True if setup successful
         """
         try:
-            # Validate start_frame and start_segment alignment
-            # IMPORTANT: These must come from HLS metadata for proper alignment
-            # Passing start_frame without correct start_segment will cause frame misalignment!
-            if self.config.start_frame > 0 and self.config.start_segment <= 1:
-                logger.warning(
-                    f"start_frame={self.config.start_frame} but start_segment={self.config.start_segment}. "
-                    f"Frame numbers may not align correctly! "
-                    f"For proper resume, both values must come from HLS metadata lookup."
-                )
-
             # Set up input handler (using new abstraction layer)
             self._input_handler = FrameInputHandler(
                 input_source=self.config.input_source,
@@ -357,7 +329,6 @@ class BaseService(ABC):
         """Access to DB writer (for advanced use)"""
         return self._db_writer
 
-    # Backward compatibility - services that accessed _frame_provider.fps, etc.
     @property
     def fps(self) -> Optional[float]:
         """Get FPS from input handler metadata"""
