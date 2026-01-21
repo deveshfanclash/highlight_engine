@@ -29,9 +29,7 @@ from config.schemas import (
     OutputFormat,
 
     # Tier 1: Model
-    ClassMapping,
     ModelParams,
-    ResourceRequirements,
     ModelConfig,
     ModelRegistryConfig,
 
@@ -64,16 +62,13 @@ from config.schemas import (
 )
 
 from config.class_registry import (
-    UniversalClassID,
-    ClassDefinition,
-    UNIVERSAL_CLASS_REGISTRY,
-    get_class_by_name,
-    get_class_by_id,
-    get_classes_for_sport,
-    get_class_id,
-    get_class_name,
-    validate_class_name,
-    create_model_to_universal_mapping,
+    CLASS_ALIASES,
+    normalize_class_name,
+    find_model_class_ids,
+    create_class_mapping,
+    get_canonical_names,
+    add_alias,
+    COCO_CLASSES,
 )
 
 from config.environment import (
@@ -96,9 +91,7 @@ __all__ = [
     "OutputFormat",
 
     # Tier 1: Model
-    "ClassMapping",
     "ModelParams",
-    "ResourceRequirements",
     "ModelConfig",
     "ModelRegistryConfig",
 
@@ -130,16 +123,13 @@ __all__ = [
     "PoseOutput",
 
     # Class Registry
-    "UniversalClassID",
-    "ClassDefinition",
-    "UNIVERSAL_CLASS_REGISTRY",
-    "get_class_by_name",
-    "get_class_by_id",
-    "get_classes_for_sport",
-    "get_class_id",
-    "get_class_name",
-    "validate_class_name",
-    "create_model_to_universal_mapping",
+    "CLASS_ALIASES",
+    "normalize_class_name",
+    "find_model_class_ids",
+    "create_class_mapping",
+    "get_canonical_names",
+    "add_alias",
+    "COCO_CLASSES",
 
     # Infrastructure Config
     "InfraConfig",

@@ -76,15 +76,8 @@ def create_od_service_config(
     local_mode: bool = False,
     output_dir: Optional[str] = None,
 ) -> ODServiceConfig:
-    """Create ODServiceConfig from game config components"""
+    """Create ODServiceConfig from game config components."""
     input_type = get_input_type(source_url)
-
-    # Build class mapping from list format to dict
-    class_mapping = {}
-    for cm in model_config.get("default_class_mapping", []):
-        if isinstance(cm, dict):
-            class_mapping[cm["model_class_id"]] = cm["universal_class_name"]
-
     model_params = model_config.get("default_params", {})
     processing_resolution = inference_settings.get("processing_resolution", [1280, 720])
 
@@ -106,13 +99,11 @@ def create_od_service_config(
         local_output_dir=output_dir,
         model_id=model_config.get("model_id", ""),
         model_url=model_config.get("model_url", ""),
-        model_architecture=model_config.get("model_architecture", "yolov8"),
         confidence_threshold=model_params.get("confidence_threshold", 0.5),
         iou_threshold=model_params.get("iou_threshold", 0.45),
         max_detections=model_params.get("max_detections", 100),
         half_precision=model_params.get("half_precision", False),
-        classes_to_predict=model_config.get("classes_to_predict", []),
-        class_mapping=class_mapping,
+        classes_to_detect=model_config.get("classes_to_detect", []),
     )
 
 

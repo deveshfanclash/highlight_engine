@@ -13,7 +13,7 @@ from config.schemas import InputType
 from services.base_service import BaseService, ServiceConfig
 from input_handlers import FrameInputPacket
 from core.utils import ensure_model_available
-from models.yolo_model import YOLOModel, create_yolo_model
+from models.yolo_model import YOLOModel, load_yolo_model
 
 logger = logging.getLogger(__name__)
 
@@ -139,11 +139,9 @@ class PoseService(BaseService):
 
             # Load model
             logger.info(f"Loading pose model from {local_path}")
-            self._model = create_yolo_model(
-                model_id=self.pose_config.model_id,
+            self._model = load_yolo_model(
                 model_path=local_path,
                 device=self.pose_config.device,
-                class_mapping=self.pose_config.class_mapping,
                 half_precision=self.pose_config.half_precision,
                 warmup=True
             )
@@ -169,9 +167,9 @@ class PoseService(BaseService):
             # Run inference
             outputs = self._model.predict(
                 [frame_packet.frame],
-                confidence_threshold=self.pose_config.confidence_threshold,
-                iou_threshold=self.pose_config.iou_threshold,
-                max_detections=self.pose_config.max_detections,
+                confidence=self.pose_config.confidence_threshold,
+                iou=self.pose_config.iou_threshold,
+                max_det=self.pose_config.max_detections,
             )
 
             if not outputs:

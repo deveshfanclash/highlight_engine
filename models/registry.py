@@ -1,33 +1,30 @@
 """
 Model Registry
 
-Independent model management with A/B testing support.
+Independent model management.
 Models are defined separately from games and loaded on demand.
 """
 
 import os
 import logging
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional
 from pathlib import Path
 
 from config.schemas import (
     ModelConfig,
-    ModelRegistryConfig,
-    ModelType,
     ModelArchitecture,
 )
-from models.base_model import BaseModel
 from models.yolo_model import YOLOModel
 
 logger = logging.getLogger(__name__)
 
 
-# Architecture to implementation mapping
-ARCHITECTURE_IMPLEMENTATIONS: Dict[ModelArchitecture, Type[BaseModel]] = {
-    ModelArchitecture.YOLO_V8: YOLOModel,
-    ModelArchitecture.YOLO_V11: YOLOModel,
-    ModelArchitecture.YOLO_V12: YOLOModel,
-    ModelArchitecture.YOLO_POSE: YOLOModel,
+# Architecture to implementation class mapping
+YOLO_ARCHITECTURES = {
+    ModelArchitecture.YOLO_V8,
+    ModelArchitecture.YOLO_V11,
+    ModelArchitecture.YOLO_V12,
+    ModelArchitecture.YOLO_POSE,
 }
 
 
@@ -67,7 +64,7 @@ class ModelRegistry:
             device: Default device for model loading
         """
         self._configs: Dict[str, ModelConfig] = {}
-        self._loaded_models: Dict[str, BaseModel] = {}
+        self._loaded_models: Dict[str, YOLOModel] = {}
         self.cache_dir = Path(cache_dir)
         self.default_device = device
 
@@ -87,43 +84,30 @@ class ModelRegistry:
             config: Model configuration to register
         """
         self._configs[config.model_id] = config
-        logger.info(f"Registered model: {config.model_id} (v{config.version})")
+        logger.info(f"Registered model: {config.model_id}")
 
     def register_models(self, configs: List[ModelConfig]):
         """Register multiple model configurations."""
         for config in configs:
             self.register_model(config)
 
-    def get_config(self, model_id: str, version: str = "latest") -> Optional[ModelConfig]:
+    def get_config(self, model_id: str) -> Optional[ModelConfig]:
         """
-        Get model configuration by ID and version.
+        Get model configuration by ID.
 
         Args:
             model_id: Model identifier
-            version: Model version (default: "latest")
 
         Returns:
             ModelConfig if found, None otherwise
         """
-        config = self._configs.get(model_id)
-
-        if config is None:
-            return None
-
-        # Version matching
-        if version == "latest" or config.version == version:
-            return config
-
-        # Look for version-specific variant
-        versioned_id = f"{model_id}_{version}"
-        return self._configs.get(versioned_id)
+        return self._configs.get(model_id)
 
     def get_model(
         self,
         model_id: str,
-        version: str = "latest",
         device: Optional[str] = None
-    ) -> Optional[BaseModel]:
+    ) -> Optional[YOLOModel]:
         """
         Get a loaded model by ID.
 
@@ -131,27 +115,25 @@ class ModelRegistry:
 
         Args:
             model_id: Model identifier
-            version: Model version
             device: Device override (default: use config or registry default)
 
         Returns:
-            Loaded BaseModel instance, or None if not found
+            Loaded YOLOModel instance, or None if not found
         """
         # Check cache first
-        cache_key = f"{model_id}_{version}"
-        if cache_key in self._loaded_models:
-            return self._loaded_models[cache_key]
+        if model_id in self._loaded_models:
+            return self._loaded_models[model_id]
 
         # Get config
-        config = self.get_config(model_id, version)
+        config = self.get_config(model_id)
         if config is None:
-            logger.error(f"Model config not found: {model_id} (version: {version})")
+            logger.error(f"Model config not found: {model_id}")
             return None
 
         # Load model
         model = self._load_model(config, device)
         if model:
-            self._loaded_models[cache_key] = model
+            self._loaded_models[model_id] = model
 
         return model
 
@@ -159,7 +141,7 @@ class ModelRegistry:
         self,
         config: ModelConfig,
         device: Optional[str] = None
-    ) -> Optional[BaseModel]:
+    ) -> Optional[YOLOModel]:
         """
         Load a model from configuration.
 
@@ -172,14 +154,13 @@ class ModelRegistry:
         """
         try:
             # Determine device
-            model_device = device or config.preferred_device or self.default_device
+            model_device = device or self.default_device
             if model_device == "gpu":
-                model_device = "cuda:0"  # Default GPU
+                model_device = "cuda:0"
 
-            # Get implementation class
-            impl_class = ARCHITECTURE_IMPLEMENTATIONS.get(config.model_architecture)
-            if impl_class is None:
-                logger.error(f"No implementation for architecture: {config.model_architecture}")
+            # Check if architecture is supported
+            if config.model_architecture not in YOLO_ARCHITECTURES:
+                logger.error(f"Unsupported architecture: {config.model_architecture}")
                 return None
 
             # Ensure model file is available
@@ -187,26 +168,17 @@ class ModelRegistry:
             if model_path is None:
                 return None
 
-            # Create class mapping dict
-            class_mapping = config.get_class_mapping_dict()
+            # Create and load model
+            half_precision = config.default_params.half_precision if config.default_params else False
+            model = YOLOModel(device=model_device, half_precision=half_precision)
 
-            # Instantiate model
-            model = impl_class(
-                model_id=config.model_id,
-                device=model_device,
-                class_mapping=class_mapping
-            )
-
-            # Load weights
             success = model.load(str(model_path))
             if not success:
                 logger.error(f"Failed to load model weights: {config.model_id}")
                 return None
 
-            # Warmup if configured
-            if config.params.input_size:
-                h, w = config.params.input_size
-                model.warmup(input_shape=(h, w, 3))
+            # Warmup
+            model.warmup()
 
             logger.info(f"Loaded model: {config.model_id} on {model_device}")
             return model
@@ -319,7 +291,7 @@ class ModelRegistry:
         self,
         model_ids: List[str],
         device: Optional[str] = None
-    ) -> Dict[str, BaseModel]:
+    ) -> Dict[str, YOLOModel]:
         """
         Load all models needed for a game.
 
@@ -342,17 +314,15 @@ class ModelRegistry:
         logger.info(f"Loaded {len(models)}/{len(model_ids)} models for game")
         return models
 
-    def unload_model(self, model_id: str, version: str = "latest"):
+    def unload_model(self, model_id: str):
         """
         Unload a model from cache.
 
         Args:
             model_id: Model identifier
-            version: Model version
         """
-        cache_key = f"{model_id}_{version}"
-        if cache_key in self._loaded_models:
-            del self._loaded_models[cache_key]
+        if model_id in self._loaded_models:
+            del self._loaded_models[model_id]
             logger.info(f"Unloaded model: {model_id}")
 
     def unload_all(self):

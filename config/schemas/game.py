@@ -18,7 +18,7 @@ from config.schemas.enums import (
     ServiceType,
     ProcessingPattern,
 )
-from config.schemas.model import ModelParams, ClassMapping
+from config.schemas.model import ModelParams
 
 
 # =============================================================================
@@ -32,25 +32,12 @@ class ModelAssignment(BaseModel):
     Specifies:
     - Which model to use (reference by ID)
     - What role it plays (primary OD, pose, etc.)
-    - Which classes to detect (filtering)
     - Game-specific parameter overrides
     """
     model_id: str = Field(..., description="Reference to model in registry")
     role: str = Field(
         default="default",
         description="Role in game (e.g., 'default', 'pose')"
-    )
-
-    # Class filtering (which model classes to use)
-    class_filter: List[int] = Field(
-        default_factory=list,
-        description="Model class IDs to use (empty = all)"
-    )
-
-    # Game-specific class mapping (overrides model defaults)
-    class_mapping_override: List[ClassMapping] = Field(
-        default_factory=list,
-        description="Override class mapping for this game"
     )
 
     # Parameter overrides for this game
@@ -190,11 +177,8 @@ class GameTemplate(BaseModel):
     # Global settings
     inference_settings: InferenceSettings = Field(default_factory=InferenceSettings)
 
-    # Universal class mapping (game-level interpretation)
-    universal_class_definitions: Dict[str, Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Game-specific class definitions"
-    )
+    # Game category
+    game_category: GameCategory = Field(default=GameCategory.BALL_SPORT)
 
     class Config:
         use_enum_values = True

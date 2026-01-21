@@ -1,422 +1,216 @@
 """
 Universal Class Registry
 
-Defines all universal classes used across sports/games.
-Models map their native class IDs to these universal class names.
+Simple mapping between user-friendly class names and model outputs.
 
-This serves as the single source of truth for class definitions.
-Changes here affect how detections are labeled across all games.
+Usage:
+    # User says they want to detect "ball" and "person"
+    classes = ["ball", "person"]
+
+    # System finds matching model class IDs automatically
+    model_ids = find_model_classes(model_class_names, classes)
 """
 
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-from enum import IntEnum
+from typing import Dict, List, Optional, Set
 
 
-class UniversalClassID(IntEnum):
+# =============================================================================
+# UNIVERSAL CLASS DEFINITIONS
+# =============================================================================
+
+# Canonical names (uppercase) with their common aliases (lowercase variations)
+# Key: canonical name, Value: set of aliases that map to this class
+CLASS_ALIASES: Dict[str, Set[str]] = {
+    # Common classes
+    "PERSON": {"person", "player", "human", "people", "man", "woman"},
+    "BALL": {"ball", "sports ball", "sports-ball", "sportsball"},
+    "HEAD": {"head", "face"},
+
+    # Football/Soccer
+    "GOAL": {"goal", "goalpost", "goal post", "goal-post"},
+    "GOALKEEPER": {"goalkeeper", "goalie", "keeper", "gk"},
+    "REFEREE": {"referee", "ref", "umpire"},
+
+    # Cricket
+    "BAT": {"bat", "cricket bat"},
+    "WICKET": {"wicket", "stumps", "stump"},
+    "BATSMAN": {"batsman", "batter"},
+    "BOWLER": {"bowler"},
+
+    # General sports equipment
+    "NET": {"net"},
+    "COURT_LINE": {"court line", "line", "boundary line"},
+}
+
+# Reverse lookup: alias -> canonical name
+_ALIAS_TO_CANONICAL: Dict[str, str] = {}
+for canonical, aliases in CLASS_ALIASES.items():
+    _ALIAS_TO_CANONICAL[canonical.lower()] = canonical
+    for alias in aliases:
+        _ALIAS_TO_CANONICAL[alias.lower()] = canonical
+
+
+# =============================================================================
+# CORE FUNCTIONS
+# =============================================================================
+
+def normalize_class_name(name: str) -> str:
     """
-    Universal Class IDs - consistent across all models and games.
+    Normalize a class name to its canonical form.
 
-    Convention:
-    - 0: Reserved (unused)
-    - 1-99: Common objects (person, ball, etc.)
-    - 100-199: Football-specific
-    - 200-299: Cricket-specific
-    - 300-399: Volleyball-specific
-    - 400-499: Tennis/Racket sports
-    - 500-599: Combat sports
-    - 900-999: Miscellaneous/Other
+    Args:
+        name: Any form of class name ("ball", "BALL", "sports ball", etc.)
+
+    Returns:
+        Canonical uppercase name ("BALL")
+
+    Example:
+        normalize_class_name("sports ball") -> "BALL"
+        normalize_class_name("person") -> "PERSON"
     """
-    # Common (1-99)
-    PERSON = 1
-    BALL = 2
-    HEAD = 3
-    REFEREE = 4
-    GOALKEEPER = 5
-
-    # Football-specific (100-199)
-    GOAL = 100
-    GOAL_POST = 101
-    CORNER_FLAG = 102
-    FOOTBALL = 103  # Specific ball type
-
-    # Cricket-specific (200-299)
-    BATSMAN = 200
-    BOWLER = 201
-    WICKET_KEEPER = 202
-    FIELDER = 203
-    WICKET = 204
-    STUMP = 205
-    CRICKET_BALL = 206
-    BAT = 207
-    CREASE = 208
-    BOUNDARY = 209
-
-    # Volleyball-specific (300-399)
-    NET = 300
-    VOLLEYBALL = 301
-    COURT_LINE = 302
-
-    # Tennis/Racket (400-499)
-    TENNIS_BALL = 400
-    TENNIS_RACKET = 401
-    TENNIS_NET = 402
-    BADMINTON_SHUTTLECOCK = 410
-    TABLE_TENNIS_BALL = 420
-    TABLE_TENNIS_PADDLE = 421
-    TABLE_TENNIS_TABLE = 422
-
-    # Combat sports (500-599)
-    BOXER = 500
-    BOXING_RING = 501
-    BOXING_GLOVE = 502
-
-    # Miscellaneous (900-999)
-    SCOREBOARD = 900
-    CAMERA = 901
-    ADVERTISEMENT = 902
-    CROWD = 903
+    lower_name = name.lower().strip()
+    return _ALIAS_TO_CANONICAL.get(lower_name, name.upper())
 
 
-@dataclass
-class ClassDefinition:
-    """Complete definition of a universal class"""
-    class_id: int
-    class_name: str
-    description: str
-    applicable_sports: List[str]  # List of game names, or ["all"]
-    parent_class: Optional[str] = None  # For hierarchical classes (e.g., BATSMAN is-a PERSON)
+def find_model_class_ids(
+    model_classes: Dict[int, str],
+    requested_classes: List[str]
+) -> List[int]:
+    """
+    Find model's native class IDs for user-requested class names.
+
+    This is the main function - it bridges user input to model output.
+
+    Args:
+        model_classes: Model's native class mapping {id: name}
+                      e.g., {0: "person", 1: "bicycle", 32: "sports ball"}
+        requested_classes: User's requested classes ["person", "ball"]
+
+    Returns:
+        List of model class IDs to use for inference
+        e.g., [0, 32]
+
+    Example:
+        model_classes = {0: "person", 32: "sports ball", 37: "tennis racket"}
+        requested = ["ball", "person"]
+        find_model_class_ids(model_classes, requested) -> [0, 32]
+    """
+    if not requested_classes:
+        return []  # Empty = predict all classes
+
+    # Normalize requested class names
+    normalized_requested = {normalize_class_name(c) for c in requested_classes}
+
+    # Build reverse lookup for model classes
+    # model_name -> model_id, normalized to canonical names
+    model_name_to_id: Dict[str, int] = {}
+    for model_id, model_name in model_classes.items():
+        canonical = normalize_class_name(model_name)
+        model_name_to_id[canonical] = model_id
+        # Also store the lowercase original for direct matching
+        model_name_to_id[model_name.lower()] = model_id
+
+    # Find matching IDs
+    found_ids = []
+    for requested in normalized_requested:
+        if requested in model_name_to_id:
+            found_ids.append(model_name_to_id[requested])
+        elif requested.lower() in model_name_to_id:
+            found_ids.append(model_name_to_id[requested.lower()])
+
+    return sorted(found_ids)
 
 
-# Master registry of all universal classes
-UNIVERSAL_CLASS_REGISTRY: Dict[str, ClassDefinition] = {
-    # ==========================================================================
-    # COMMON CLASSES (apply to all/most sports)
-    # ==========================================================================
-    "PERSON": ClassDefinition(
-        class_id=UniversalClassID.PERSON,
-        class_name="PERSON",
-        description="Generic human/player on field",
-        applicable_sports=["all"],
-    ),
-    "BALL": ClassDefinition(
-        class_id=UniversalClassID.BALL,
-        class_name="BALL",
-        description="Generic ball (sport-agnostic)",
-        applicable_sports=["all"],
-    ),
-    "HEAD": ClassDefinition(
-        class_id=UniversalClassID.HEAD,
-        class_name="HEAD",
-        description="Human head detection",
-        applicable_sports=["all"],
-    ),
-    "REFEREE": ClassDefinition(
-        class_id=UniversalClassID.REFEREE,
-        class_name="REFEREE",
-        description="Match referee/umpire",
-        applicable_sports=["all"],
-    ),
-    "GOALKEEPER": ClassDefinition(
-        class_id=UniversalClassID.GOALKEEPER,
-        class_name="GOALKEEPER",
-        description="Goalkeeper/keeper in goal-based sports",
-        applicable_sports=["football", "hockey", "handball"],
-    ),
+def create_class_mapping(
+    model_classes: Dict[int, str]
+) -> Dict[int, str]:
+    """
+    Create a mapping from model class IDs to canonical names.
 
-    # ==========================================================================
-    # FOOTBALL CLASSES
-    # ==========================================================================
-    "GOAL": ClassDefinition(
-        class_id=UniversalClassID.GOAL,
-        class_name="GOAL",
-        description="Goal structure/net",
-        applicable_sports=["football", "hockey", "handball"],
-    ),
-    "GOAL_POST": ClassDefinition(
-        class_id=UniversalClassID.GOAL_POST,
-        class_name="GOAL_POST",
-        description="Goal post (vertical bar)",
-        applicable_sports=["football"],
-    ),
-    "CORNER_FLAG": ClassDefinition(
-        class_id=UniversalClassID.CORNER_FLAG,
-        class_name="CORNER_FLAG",
-        description="Corner flag marker",
-        applicable_sports=["football"],
-    ),
-    "FOOTBALL": ClassDefinition(
-        class_id=UniversalClassID.FOOTBALL,
-        class_name="FOOTBALL",
-        description="Football/soccer ball specifically",
-        applicable_sports=["football"],
-        parent_class="BALL",
-    ),
+    Args:
+        model_classes: Model's native class mapping {id: name}
 
-    # ==========================================================================
-    # CRICKET CLASSES
-    # ==========================================================================
-    "BATSMAN": ClassDefinition(
-        class_id=UniversalClassID.BATSMAN,
-        class_name="BATSMAN",
-        description="Cricket batsman",
-        applicable_sports=["cricket"],
-        parent_class="PERSON",
-    ),
-    "BOWLER": ClassDefinition(
-        class_id=UniversalClassID.BOWLER,
-        class_name="BOWLER",
-        description="Cricket bowler",
-        applicable_sports=["cricket"],
-        parent_class="PERSON",
-    ),
-    "WICKET_KEEPER": ClassDefinition(
-        class_id=UniversalClassID.WICKET_KEEPER,
-        class_name="WICKET_KEEPER",
-        description="Cricket wicket keeper",
-        applicable_sports=["cricket"],
-        parent_class="PERSON",
-    ),
-    "FIELDER": ClassDefinition(
-        class_id=UniversalClassID.FIELDER,
-        class_name="FIELDER",
-        description="Cricket fielder",
-        applicable_sports=["cricket"],
-        parent_class="PERSON",
-    ),
-    "WICKET": ClassDefinition(
-        class_id=UniversalClassID.WICKET,
-        class_name="WICKET",
-        description="Cricket wicket (3 stumps + bails)",
-        applicable_sports=["cricket"],
-    ),
-    "STUMP": ClassDefinition(
-        class_id=UniversalClassID.STUMP,
-        class_name="STUMP",
-        description="Individual cricket stump",
-        applicable_sports=["cricket"],
-    ),
-    "CRICKET_BALL": ClassDefinition(
-        class_id=UniversalClassID.CRICKET_BALL,
-        class_name="CRICKET_BALL",
-        description="Cricket ball",
-        applicable_sports=["cricket"],
-        parent_class="BALL",
-    ),
-    "BAT": ClassDefinition(
-        class_id=UniversalClassID.BAT,
-        class_name="BAT",
-        description="Cricket bat",
-        applicable_sports=["cricket"],
-    ),
-    "CREASE": ClassDefinition(
-        class_id=UniversalClassID.CREASE,
-        class_name="CREASE",
-        description="Cricket crease line",
-        applicable_sports=["cricket"],
-    ),
-    "BOUNDARY": ClassDefinition(
-        class_id=UniversalClassID.BOUNDARY,
-        class_name="BOUNDARY",
-        description="Cricket boundary rope/line",
-        applicable_sports=["cricket"],
-    ),
+    Returns:
+        Mapping {model_id: canonical_name}
 
-    # ==========================================================================
-    # VOLLEYBALL CLASSES
-    # ==========================================================================
-    "NET": ClassDefinition(
-        class_id=UniversalClassID.NET,
-        class_name="NET",
-        description="Volleyball/tennis net",
-        applicable_sports=["volleyball", "tennis", "badminton"],
-    ),
-    "VOLLEYBALL": ClassDefinition(
-        class_id=UniversalClassID.VOLLEYBALL,
-        class_name="VOLLEYBALL",
-        description="Volleyball specifically",
-        applicable_sports=["volleyball"],
-        parent_class="BALL",
-    ),
-    "COURT_LINE": ClassDefinition(
-        class_id=UniversalClassID.COURT_LINE,
-        class_name="COURT_LINE",
-        description="Court boundary line",
-        applicable_sports=["volleyball", "tennis", "basketball"],
-    ),
+    Example:
+        model_classes = {0: "person", 32: "sports ball"}
+        create_class_mapping(model_classes) -> {0: "PERSON", 32: "BALL"}
+    """
+    return {
+        model_id: normalize_class_name(model_name)
+        for model_id, model_name in model_classes.items()
+    }
 
-    # ==========================================================================
-    # TENNIS / RACKET SPORT CLASSES
-    # ==========================================================================
-    "TENNIS_BALL": ClassDefinition(
-        class_id=UniversalClassID.TENNIS_BALL,
-        class_name="TENNIS_BALL",
-        description="Tennis ball",
-        applicable_sports=["tennis"],
-        parent_class="BALL",
-    ),
-    "TENNIS_RACKET": ClassDefinition(
-        class_id=UniversalClassID.TENNIS_RACKET,
-        class_name="TENNIS_RACKET",
-        description="Tennis racket",
-        applicable_sports=["tennis"],
-    ),
-    "BADMINTON_SHUTTLECOCK": ClassDefinition(
-        class_id=UniversalClassID.BADMINTON_SHUTTLECOCK,
-        class_name="BADMINTON_SHUTTLECOCK",
-        description="Badminton shuttlecock",
-        applicable_sports=["badminton"],
-    ),
-    "TABLE_TENNIS_BALL": ClassDefinition(
-        class_id=UniversalClassID.TABLE_TENNIS_BALL,
-        class_name="TABLE_TENNIS_BALL",
-        description="Table tennis ball",
-        applicable_sports=["table_tennis"],
-        parent_class="BALL",
-    ),
-    "TABLE_TENNIS_PADDLE": ClassDefinition(
-        class_id=UniversalClassID.TABLE_TENNIS_PADDLE,
-        class_name="TABLE_TENNIS_PADDLE",
-        description="Table tennis paddle/bat",
-        applicable_sports=["table_tennis"],
-    ),
-    "TABLE_TENNIS_TABLE": ClassDefinition(
-        class_id=UniversalClassID.TABLE_TENNIS_TABLE,
-        class_name="TABLE_TENNIS_TABLE",
-        description="Table tennis table",
-        applicable_sports=["table_tennis"],
-    ),
 
-    # ==========================================================================
-    # MISCELLANEOUS
-    # ==========================================================================
-    "SCOREBOARD": ClassDefinition(
-        class_id=UniversalClassID.SCOREBOARD,
-        class_name="SCOREBOARD",
-        description="Scoreboard/score display",
-        applicable_sports=["all"],
-    ),
-    "CROWD": ClassDefinition(
-        class_id=UniversalClassID.CROWD,
-        class_name="CROWD",
-        description="Crowd/spectators",
-        applicable_sports=["all"],
-    ),
+def get_canonical_names() -> List[str]:
+    """Get all canonical class names."""
+    return list(CLASS_ALIASES.keys())
+
+
+def add_alias(canonical: str, alias: str):
+    """
+    Add a new alias for a canonical class name.
+
+    Useful for custom models with non-standard class names.
+
+    Args:
+        canonical: Canonical name (e.g., "BALL")
+        alias: New alias (e.g., "soccer ball")
+    """
+    canonical_upper = canonical.upper()
+    if canonical_upper not in CLASS_ALIASES:
+        CLASS_ALIASES[canonical_upper] = set()
+    CLASS_ALIASES[canonical_upper].add(alias.lower())
+    _ALIAS_TO_CANONICAL[alias.lower()] = canonical_upper
+
+
+# =============================================================================
+# COCO CLASS NAMES (Common baseline)
+# =============================================================================
+
+# COCO dataset class names (used by most pretrained YOLO models)
+COCO_CLASSES = {
+    0: "person", 1: "bicycle", 2: "car", 3: "motorcycle", 4: "airplane",
+    5: "bus", 6: "train", 7: "truck", 8: "boat", 9: "traffic light",
+    10: "fire hydrant", 11: "stop sign", 12: "parking meter", 13: "bench",
+    14: "bird", 15: "cat", 16: "dog", 17: "horse", 18: "sheep", 19: "cow",
+    20: "elephant", 21: "bear", 22: "zebra", 23: "giraffe", 24: "backpack",
+    25: "umbrella", 26: "handbag", 27: "tie", 28: "suitcase", 29: "frisbee",
+    30: "skis", 31: "snowboard", 32: "sports ball", 33: "kite", 34: "baseball bat",
+    35: "baseball glove", 36: "skateboard", 37: "surfboard", 38: "tennis racket",
+    39: "bottle", 40: "wine glass", 41: "cup", 42: "fork", 43: "knife",
+    44: "spoon", 45: "bowl", 46: "banana", 47: "apple", 48: "sandwich",
+    49: "orange", 50: "broccoli", 51: "carrot", 52: "hot dog", 53: "pizza",
+    54: "donut", 55: "cake", 56: "chair", 57: "couch", 58: "potted plant",
+    59: "bed", 60: "dining table", 61: "toilet", 62: "tv", 63: "laptop",
+    64: "mouse", 65: "remote", 66: "keyboard", 67: "cell phone", 68: "microwave",
+    69: "oven", 70: "toaster", 71: "sink", 72: "refrigerator", 73: "book",
+    74: "clock", 75: "vase", 76: "scissors", 77: "teddy bear", 78: "hair drier",
+    79: "toothbrush"
 }
 
 
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
-
-def get_class_by_name(class_name: str) -> Optional[ClassDefinition]:
-    """Get class definition by name"""
-    return UNIVERSAL_CLASS_REGISTRY.get(class_name.upper())
-
-
-def get_class_by_id(class_id: int) -> Optional[ClassDefinition]:
-    """Get class definition by ID"""
-    for class_def in UNIVERSAL_CLASS_REGISTRY.values():
-        if class_def.class_id == class_id:
-            return class_def
-    return None
-
-
-def get_classes_for_sport(sport_name: str) -> List[ClassDefinition]:
-    """Get all classes applicable to a specific sport"""
-    result = []
-    sport_lower = sport_name.lower()
-    for class_def in UNIVERSAL_CLASS_REGISTRY.values():
-        if "all" in class_def.applicable_sports or sport_lower in class_def.applicable_sports:
-            result.append(class_def)
-    return result
-
-
-def get_class_id(class_name: str) -> Optional[int]:
-    """Get class ID by name (convenience function)"""
-    class_def = get_class_by_name(class_name)
-    return class_def.class_id if class_def else None
-
-
-def get_class_name(class_id: int) -> Optional[str]:
-    """Get class name by ID (convenience function)"""
-    class_def = get_class_by_id(class_id)
-    return class_def.class_name if class_def else None
-
-
-def validate_class_name(class_name: str) -> bool:
-    """Check if class name is valid"""
-    return class_name.upper() in UNIVERSAL_CLASS_REGISTRY
-
-
-def get_all_class_names() -> List[str]:
-    """Get all registered class names"""
-    return list(UNIVERSAL_CLASS_REGISTRY.keys())
-
-
-# =============================================================================
-# MAPPING HELPERS (for model output conversion)
-# =============================================================================
-
-def create_model_to_universal_mapping(
-    model_classes: Dict[int, str]
-) -> Dict[int, int]:
-    """
-    Create a mapping from model class IDs to universal class IDs.
-
-    Args:
-        model_classes: Dict mapping model class ID to universal class name
-                      e.g., {0: "PERSON", 1: "BALL", 32: "GOAL"}
-
-    Returns:
-        Dict mapping model class ID to universal class ID
-        e.g., {0: 1, 1: 2, 32: 100}
-    """
-    mapping = {}
-    for model_id, class_name in model_classes.items():
-        class_def = get_class_by_name(class_name)
-        if class_def:
-            mapping[model_id] = class_def.class_id
-        else:
-            raise ValueError(f"Unknown class name: {class_name}")
-    return mapping
-
-
-# =============================================================================
-# QUICK REFERENCE (for documentation)
-# =============================================================================
-
-def print_registry_summary():
-    """Print a summary of all registered classes (for documentation)"""
-    print("=" * 60)
-    print("UNIVERSAL CLASS REGISTRY")
-    print("=" * 60)
-
-    # Group by sport
-    sports = set()
-    for class_def in UNIVERSAL_CLASS_REGISTRY.values():
-        for sport in class_def.applicable_sports:
-            sports.add(sport)
-
-    for sport in sorted(sports):
-        print(f"\n{sport.upper()}:")
-        print("-" * 40)
-        classes = get_classes_for_sport(sport) if sport != "all" else [
-            c for c in UNIVERSAL_CLASS_REGISTRY.values() if "all" in c.applicable_sports
-        ]
-        for c in sorted(classes, key=lambda x: x.class_id):
-            print(f"  {c.class_id:4d} | {c.class_name:25s} | {c.description}")
-
-
 if __name__ == "__main__":
-    # print_registry_summary()
-    # print(get_class_by_name("FOOTBALL"))
-    # print(get_class_by_id(101))
-    # print(get_classes_for_sport("football"))
-    mapping = create_model_to_universal_mapping({38: 'PERSON', 1: 'BALL', 9: 'GOAL'})
-    print(mapping)
-    # print(get_class_by_name(mapping[38]))
-    for key, value in mapping.items():
-        print(f"{key}: {type(value)}")
-    
+    # Test the functions
+    print("Testing class registry...")
 
+    # Test normalization
+    assert normalize_class_name("ball") == "BALL"
+    assert normalize_class_name("sports ball") == "BALL"
+    assert normalize_class_name("PERSON") == "PERSON"
+    assert normalize_class_name("player") == "PERSON"
+    print("✓ Normalization works")
+
+    # Test finding model class IDs
+    model = {0: "person", 32: "sports ball", 37: "tennis racket"}
+    ids = find_model_class_ids(model, ["ball", "person"])
+    assert set(ids) == {0, 32}
+    print("✓ Finding model class IDs works")
+
+    # Test with COCO classes
+    ids = find_model_class_ids(COCO_CLASSES, ["ball", "person"])
+    assert set(ids) == {0, 32}
+    print("✓ COCO class lookup works")
+
+    print("\nAll tests passed!")

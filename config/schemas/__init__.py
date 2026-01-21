@@ -40,9 +40,7 @@ from config.schemas.enums import (
 # TIER 1: MODEL REGISTRY
 # =============================================================================
 from config.schemas.model import (
-    ClassMapping,
     ModelParams,
-    ResourceRequirements,
     ModelConfig,
     ModelRegistryConfig,
 )
@@ -103,9 +101,7 @@ __all__ = [
     "OutputFormat",
 
     # Tier 1: Model
-    "ClassMapping",
     "ModelParams",
-    "ResourceRequirements",
     "ModelConfig",
     "ModelRegistryConfig",
 

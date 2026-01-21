@@ -1,118 +1,66 @@
 # =============================================================================
-# FOOTBALL GAME CONFIG (v4)
+# Football Game Configuration
 # =============================================================================
 # Usage:
 #   python main.py \
 #     --game-config config/games/football_v1.yaml \
 #     --match-id test_123 \
 #     --source /path/to/video.mp4 \
-#     --resume start
+#     --local
 # =============================================================================
 
-
-# =============================================================================
-# GAME TEMPLATE (Tier 2)
-# =============================================================================
 game_id: "football_v1"
 game_name: "Football"
-description: "Football inference configuration with object detection"
-
 
 # =============================================================================
-# INFERENCE SETTINGS (Global defaults)
-# =============================================================================
-# inference_settings:
-#   target_fps: 25
-#   frame_skip: 1                       # Process every frame (1 = no skip)
-#   processing_resolution: [1280, 720]  # [width, height]
-
-
-# =============================================================================
-# MODELS (Tier 1 - Model Registry)
+# MODELS
 # =============================================================================
 models:
-  # -------------------------------------------------------------------------
-  # Object Detection Model
-  # -------------------------------------------------------------------------
-  - model_id: "yolo_football_v2"
-    model_name: "YOLO Football Detector v2"
-    description: "YOLOv8 model trained on football/soccer footage"
-
-    # Model type and architecture
+  - model_id: "yolo_football"
+    model_name: "YOLO Football Detector"
     model_type: "object_detection"
     model_architecture: "yolov8"
-    output_format: "bbox"
 
-    # Model source (local path or S3 URL)
-    # model_url: "/path/to/model.pt"
-    model_url: "s3://models/yolo_football_v2.pt"
+    # Path or URL to model file
+    # Use "yolov8n.pt" for testing (downloads automatically)
+    model_url: "yolov8n.pt"
 
-    # Native classes (what the model outputs)
-    # native_classes: ["ball"]
-    # native_class_ids: [0]
+    # Classes to detect - just use simple names!
+    # System automatically maps "ball" -> model's "sports ball" (class 32)
+    # Empty list = detect all classes
+    classes_to_detect:
+      - ball
+      - person
 
-    # Class mapping (model class ID -> universal class name)
-    default_class_mapping:
-      - model_class_id: 0
-        model_class_name: "ball"
-        universal_class_name: "BALL"
-
-    # Default inference parameters
+    # Inference parameters
     default_params:
       confidence_threshold: 0.5
-      # iou_threshold: 0.45
-      # max_detections: 100
-      # half_precision: false
-
-    # Resource requirements
-    # resources:
-      # requires_gpu: false
-
+      half_precision: false
 
 # =============================================================================
-# MODEL ASSIGNMENTS (How models are used in this game)
+# MODEL ASSIGNMENTS
 # =============================================================================
 model_assignments:
-  - model_id: "yolo_football_v2"
+  - model_id: "yolo_football"
     role: "default"
-    priority: 1
-    class_filter: []  # Empty = use all classes
-
 
 # =============================================================================
 # SERVICES
 # =============================================================================
 services:
-  # -------------------------------------------------------------------------
-  # Object Detection Service
-  # -------------------------------------------------------------------------
   - service_type: "object_detection"
     enabled: true
-
-    # Which model roles to use
-    # model_roles: ["default"]
-
-    # Output settings
+    model_roles:
+      - default
     db_table_name: "inference_results"
     db_batch_size: 12
-    db_flush_interval_ms: 250
-  
-addition_runtime:
-  - logging:
-    - level: "INFO"
-      enabled: true
-    - level: "WARNING"
-      enabled: true
-    - level: "ERROR"
-      enabled: true
-    - level: "CRITICAL"
-      enabled: true
-
 
 # =============================================================================
-# UNIVERSAL CLASS DEFINITIONS
+# INFERENCE SETTINGS
 # =============================================================================
-# universal_class_definitions:
-#   BALL:
-#     display_name: "Ball"
-#     color: "#FFFF00"
+inference_settings:
+  target_fps: 30
+  frame_skip: 1
+  processing_resolution:
+    - 1280
+    - 720
