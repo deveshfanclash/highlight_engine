@@ -28,7 +28,8 @@ class ModelConfig(BaseModel):
     model_name: str = Field(default="", description="Human-readable name")
     model_type: ModelType = Field(default=ModelType.OBJECT_DETECTION)
     model_architecture: ModelArchitecture = Field(default=ModelArchitecture.YOLO_V8)
-    model_url: str = Field(default="", description="URL or path to model file")
+    model_url: str = Field(default="", description="URL to download model from")
+    model_path: str = Field(default="", description="Local path to model file")
 
     # Classes to detect (user-friendly names like "ball", "person")
     # Empty list = detect all classes the model supports

@@ -21,20 +21,17 @@ models:
     model_type: "object_detection"
     model_architecture: "yolov8"
 
-    # Path or URL to model file
-    # Use "yolov8n.pt" for testing (downloads automatically)
-    model_url: "yolov8n.pt"
+    # Local path to model file
+    model_path: "/Users/spectatr/Downloads/best_263_nano_1920_bph_v3.pt"
 
     # Classes to detect - just use simple names!
-    # System automatically maps "ball" -> model's "sports ball" (class 32)
-    # Empty list = detect all classes
+    # This model has: Ball, Person, Head
     classes_to_detect:
       - ball
-      - person
 
     # Inference parameters
     default_params:
-      confidence_threshold: 0.5
+      confidence_threshold: 0.3
       half_precision: false
 
 # =============================================================================

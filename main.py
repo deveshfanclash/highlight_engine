@@ -99,6 +99,7 @@ def create_od_service_config(
         local_output_dir=output_dir,
         model_id=model_config.get("model_id", ""),
         model_url=model_config.get("model_url", ""),
+        model_path=model_config.get("model_path", ""),
         confidence_threshold=model_params.get("confidence_threshold", 0.5),
         iou_threshold=model_params.get("iou_threshold", 0.45),
         max_detections=model_params.get("max_detections", 100),

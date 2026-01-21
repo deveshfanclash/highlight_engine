@@ -36,6 +36,7 @@ class ConfigLoader:
             model_type=ModelType(data.get("model_type", "object_detection")),
             model_architecture=ModelArchitecture(data.get("model_architecture", "yolov8")),
             model_url=data.get("model_url", ""),
+            model_path=data.get("model_path", ""),
             classes_to_detect=data.get("classes_to_detect", []),
             default_params=params,
             requires_gpu=data.get("requires_gpu", True),
