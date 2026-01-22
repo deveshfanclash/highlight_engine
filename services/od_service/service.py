@@ -115,6 +115,125 @@ class ODService(BaseService):
         """ODService supports efficient batched processing."""
         return True
 
+    @property
+    def supports_multi_worker(self) -> bool:
+        """ODService supports multi-worker parallel processing."""
+        return True
+
+    def get_model_path(self) -> str:
+        """Get path to model file for worker initialization."""
+        if self.od_config.model_path:
+            return self.od_config.model_path
+        elif self.od_config.model_url:
+            model_id = self.od_config.model_id or "default"
+            return str(download_model(
+                source=self.od_config.model_url,
+                model_id=model_id,
+                filename="model.pt"
+            ))
+        raise ValueError("No model_url or model_path specified")
+
+    def get_model_config(self) -> Dict[str, Any]:
+        """Get model configuration for worker initialization."""
+        return {
+            "model_id": self.od_config.model_id,
+            "confidence_threshold": self.od_config.confidence_threshold,
+            "iou_threshold": self.od_config.iou_threshold,
+            "max_detections": self.od_config.max_detections,
+            "half_precision": self.od_config.half_precision,
+            "classes_to_detect": self.od_config.classes_to_detect,
+        }
+
+    @staticmethod
+    def worker_init(
+        device: str,
+        model_path: str,
+        half_precision: bool = False,
+        classes_to_detect: List[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Initialize YOLO model in worker process.
+
+        Args:
+            device: Device to load model on
+            model_path: Path to model file
+            half_precision: Use FP16 inference
+            classes_to_detect: Class names to filter
+
+        Returns:
+            Dict with model and class IDs
+        """
+        model = load_yolo_model(
+            model_path=model_path,
+            device=device,
+            half_precision=half_precision,
+            warmup=True,
+        )
+
+        # Convert class names to IDs
+        class_ids = []
+        if classes_to_detect:
+            class_ids = model.get_class_ids_for_names(classes_to_detect)
+
+        return {
+            "model": model,
+            "class_ids": class_ids,
+            "config": kwargs,
+        }
+
+    @staticmethod
+    def worker_process_batch(
+        model: Dict[str, Any],
+        frames: List,
+        metadata: List[Dict[str, Any]],
+    ) -> List[Optional[Dict[str, Any]]]:
+        """
+        Process batch of frames in worker process.
+
+        Args:
+            model: Dict from worker_init containing model and config
+            frames: List of numpy arrays
+            metadata: List of metadata dicts
+
+        Returns:
+            List of result dicts
+        """
+        yolo_model = model["model"]
+        class_ids = model["class_ids"]
+        config = model.get("config", {})
+
+        confidence = config.get("confidence_threshold", 0.5)
+        iou = config.get("iou_threshold", 0.45)
+        max_det = config.get("max_detections", 100)
+        model_id = config.get("model_id", "")
+
+        try:
+            results = yolo_model.predict(
+                frames,
+                confidence=confidence,
+                classes=class_ids if class_ids else None,
+                iou=iou,
+                max_det=max_det,
+            )
+
+            output = []
+            for detection_result in results:
+                if detection_result is None:
+                    output.append(None)
+                else:
+                    output.append({
+                        "model_id": model_id,
+                        "detections": [d.to_dict() for d in detection_result.detections],
+                        "detection_count": detection_result.count,
+                    })
+
+            return output
+
+        except Exception as e:
+            logger.error(f"Worker error processing batch: {e}")
+            return [None] * len(frames)
+
     def process_frame(self, frame_packet: FrameInputPacket) -> Optional[Dict[str, Any]]:
         """Process a single frame and return dict for DB storage."""
         try:
@@ -255,6 +374,15 @@ def build_od_config(
 
         # Batching (for GPU efficiency)
         inference_batch_size=model_params.get("batch_size", 1),
+
+        # Multi-worker settings
+        num_workers=inference_settings.get("num_workers", 1),
+        worker_queue_size=inference_settings.get("worker_queue_size", 0),
+
+        # Buffer settings
+        enable_buffering=inference_settings.get("enable_buffering", None),
+        buffer_size=inference_settings.get("buffer_size", 30),
+        buffer_mode=inference_settings.get("buffer_mode", "drop_old"),
 
         # Device
         device=device,

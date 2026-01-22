@@ -143,6 +143,30 @@ class InferenceSettings(BaseModel):
         description="Default processing resolution [width, height]"
     )
 
+    # Parallelism settings
+    num_workers: int = Field(
+        default=1, ge=1,
+        description="Number of worker processes for parallel inference"
+    )
+    worker_queue_size: int = Field(
+        default=0, ge=0,
+        description="Queue size per worker (0 = auto: num_workers * 4)"
+    )
+
+    # Buffer settings
+    enable_buffering: Optional[bool] = Field(
+        default=None,
+        description="Enable frame buffering (None = auto-detect based on source type)"
+    )
+    buffer_size: int = Field(
+        default=30, ge=1,
+        description="Buffer size for frame buffering"
+    )
+    buffer_mode: str = Field(
+        default="drop_old",
+        description="Buffer mode: 'fifo' or 'drop_old'"
+    )
+
 
 # =============================================================================
 # GAME TEMPLATE

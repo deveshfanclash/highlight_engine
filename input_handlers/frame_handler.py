@@ -7,7 +7,7 @@ Supports optional buffering for async processing via StreamBuffer.
 """
 
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Union
 import logging
 
 import numpy as np
@@ -15,6 +15,7 @@ import numpy as np
 from config.schemas import InputType, ProcessingPattern
 from core.frame_provider import FrameProvider, FrameProviderConfig, StreamType, FramePacket
 from core.stream_buffer import StreamBuffer, BufferedFrameProvider, BufferMode
+from core.source_router import SourceRouter
 from input_handlers.base import BaseInputHandler, InputPacket
 
 logger = logging.getLogger(__name__)
@@ -58,23 +59,33 @@ class FrameInputHandler(BaseInputHandler):
     that need frame-by-frame processing (object detection, camera view, etc.)
 
     Supports optional buffering for decoupling frame extraction from processing:
-    - buffered=False (default): Direct iteration, blocking
+    - buffered=False: Direct iteration, blocking
     - buffered=True: Background frame extraction with StreamBuffer
+    - buffered=None (default): Auto-detect based on source type
+      - HLS/RTSP streams: Enable buffering with DROP_OLD mode (real-time)
+      - Local files: Disable buffering (VOD)
 
     Usage:
-        # Direct mode (default)
+        # Auto-detect mode (default) - streams get buffered, files don't
         handler = FrameInputHandler(
             input_source="https://example.com/stream.m3u8",
             input_type=InputType.HLS,
         )
 
-        # Buffered mode for real-time streams
+        # Explicit buffered mode for real-time streams
         handler = FrameInputHandler(
             input_source="rtsp://camera/stream",
             input_type=InputType.RTSP,
             buffered=True,
             buffer_size=30,
             buffer_mode=BufferMode.DROP_OLD,  # Real-time: drop old frames
+        )
+
+        # Explicit direct mode
+        handler = FrameInputHandler(
+            input_source="/path/to/video.mp4",
+            input_type=InputType.MP4,
+            buffered=False,
         )
 
         for packet in handler.iterate():
@@ -93,9 +104,9 @@ class FrameInputHandler(BaseInputHandler):
         start_segment: int = 1,
         resolution_preference: str = "_1080p.m3u8",
         # Buffer settings
-        buffered: bool = False,
+        buffered: Optional[bool] = None,  # None = auto-detect based on source type
         buffer_size: int = 30,
-        buffer_mode: BufferMode = BufferMode.FIFO,
+        buffer_mode: Union[BufferMode, str] = BufferMode.FIFO,
         **kwargs
     ):
         super().__init__(
@@ -112,10 +123,27 @@ class FrameInputHandler(BaseInputHandler):
         self.start_segment = start_segment
         self.resolution_preference = resolution_preference
 
-        # Buffer settings
-        self.buffered = buffered
+        # Handle buffer_mode as string or enum
+        if isinstance(buffer_mode, str):
+            buffer_mode = BufferMode.DROP_OLD if buffer_mode == "drop_old" else BufferMode.FIFO
+
+        # Auto-detect buffering based on source type
+        if buffered is None:
+            source_type = SourceRouter.detect(input_source)
+            if SourceRouter.is_stream(source_type):
+                # HLS or RTSP: enable buffering with DROP_OLD for real-time
+                self.buffered = True
+                self.buffer_mode = BufferMode.DROP_OLD
+                logger.info(f"Auto-enabled buffering for stream source: {source_type.value}")
+            else:
+                # Local files: no buffering needed
+                self.buffered = False
+                self.buffer_mode = buffer_mode
+        else:
+            self.buffered = buffered
+            self.buffer_mode = buffer_mode
+
         self.buffer_size = buffer_size
-        self.buffer_mode = buffer_mode
 
         # Frame provider instance
         self._provider: Optional[FrameProvider] = None

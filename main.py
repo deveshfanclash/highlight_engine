@@ -56,6 +56,9 @@ def run_service(
     device: str = "cuda:0",
     local_mode: bool = False,
     output_dir: Optional[str] = None,
+    num_workers: int = 1,
+    queue_size: int = 0,
+    buffer_mode: str = "drop_old",
 ):
     """
     Run an inference service based on game configuration.
@@ -69,6 +72,9 @@ def run_service(
         device: Device to run on (cpu, cuda:0, etc.)
         local_mode: If True, run without infrastructure dependencies
         output_dir: Output directory for local mode
+        num_workers: Number of worker processes for parallel inference
+        queue_size: Queue size per worker (0 = auto)
+        buffer_mode: Buffer mode for streams ('fifo' or 'drop_old')
     """
     # Initialize infrastructure config
     infra = get_infra_config(local_mode=local_mode, output_dir=output_dir)
@@ -150,6 +156,16 @@ def run_service(
     # Create service using ServiceRegistry
     # The registry handles config building and service instantiation
     inference_settings = game_template.inference_settings.model_dump()
+
+    # CLI overrides for multi-worker settings
+    if num_workers > 1:
+        inference_settings["num_workers"] = num_workers
+        logger.info(f"Multi-worker mode enabled: {num_workers} workers")
+    if queue_size > 0:
+        inference_settings["worker_queue_size"] = queue_size
+    if buffer_mode:
+        inference_settings["buffer_mode"] = buffer_mode
+
     service_config_dict = target_service.model_dump()
 
     try:
@@ -201,6 +217,14 @@ Resume Modes:
   start   - Fresh start from frame 0
   current - Resume from last written frame (queries DB, skipped in local mode)
   latest  - Start from current stream position (live edge)
+
+Multi-Worker Mode:
+  # Run with 4 parallel worker processes
+  python main.py \\
+    --game-config config/games/football_v1.yaml \\
+    --match-id match_12345 \\
+    --source "https://cdn.example.com/stream.m3u8" \\
+    --num-workers 4
         """
     )
 
@@ -249,6 +273,26 @@ Resume Modes:
         help="Enable verbose logging"
     )
 
+    # Multi-worker settings
+    parser.add_argument(
+        "--num-workers", "-w",
+        type=int,
+        default=1,
+        help="Number of worker processes for parallel inference (default: 1)"
+    )
+    parser.add_argument(
+        "--queue-size",
+        type=int,
+        default=0,
+        help="Queue size per worker (default: 0 = auto, num_workers * 4)"
+    )
+    parser.add_argument(
+        "--buffer-mode",
+        choices=["fifo", "drop_old"],
+        default="drop_old",
+        help="Buffer mode for streams (default: drop_old for real-time)"
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -268,6 +312,9 @@ Resume Modes:
             device=args.device,
             local_mode=args.local,
             output_dir=args.output_dir,
+            num_workers=args.num_workers,
+            queue_size=args.queue_size,
+            buffer_mode=args.buffer_mode,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

@@ -49,6 +49,15 @@ class ServiceConfig:
     # batch_size > 1 enables batched processing for ~3-8x throughput
     inference_batch_size: int = 1  # Number of frames to process at once
 
+    # Multi-worker settings (for process-based parallelism)
+    num_workers: int = 1  # Number of worker processes
+    worker_queue_size: int = 0  # Queue size per worker (0 = auto: num_workers * 4)
+
+    # Buffer settings (for async frame extraction)
+    enable_buffering: Optional[bool] = None  # None = auto-detect based on source type
+    buffer_size: int = 30  # Buffer size for frame buffering
+    buffer_mode: str = "drop_old"  # "fifo" or "drop_old"
+
     # Device settings
     device: str = "cpu"  # "cpu", "cuda:0", "cuda:1", etc.
 
@@ -206,6 +215,76 @@ class BaseService(ABC):
         """
         return False
 
+    @property
+    def supports_multi_worker(self) -> bool:
+        """
+        Whether this service supports multi-worker parallel processing.
+
+        Override to return True if worker_init and worker_process_batch are implemented.
+        """
+        return False
+
+    def get_model_path(self) -> str:
+        """
+        Get the path to the model file.
+
+        Override in subclass to return the model path for worker initialization.
+        Required for multi-worker mode.
+        """
+        raise NotImplementedError("Subclass must implement get_model_path for multi-worker mode")
+
+    def get_model_config(self) -> Dict[str, Any]:
+        """
+        Get model configuration for worker initialization.
+
+        Override in subclass to return config dict for worker_init.
+        Required for multi-worker mode.
+        """
+        raise NotImplementedError("Subclass must implement get_model_config for multi-worker mode")
+
+    @staticmethod
+    def worker_init(
+        device: str,
+        model_path: str,
+        **config
+    ) -> Any:
+        """
+        Initialize model in worker process.
+
+        Called once when worker starts. Returns the model object.
+        Override in subclass for multi-worker support.
+
+        Args:
+            device: Device to load model on (e.g., "cuda:0")
+            model_path: Path to model file
+            **config: Additional model configuration
+
+        Returns:
+            Initialized model object
+        """
+        raise NotImplementedError("Subclass must implement worker_init for multi-worker mode")
+
+    @staticmethod
+    def worker_process_batch(
+        model: Any,
+        frames: List,
+        metadata: List[Dict[str, Any]],
+    ) -> List[Optional[Dict[str, Any]]]:
+        """
+        Process a batch of frames in worker process.
+
+        Override in subclass for multi-worker support.
+
+        Args:
+            model: Model object from worker_init
+            frames: List of numpy arrays (frames)
+            metadata: List of metadata dicts for each frame
+
+        Returns:
+            List of result dicts (same length as frames)
+        """
+        raise NotImplementedError("Subclass must implement worker_process_batch for multi-worker mode")
+
     @abstractmethod
     def cleanup(self):
         """
@@ -223,7 +302,10 @@ class BaseService(ABC):
         Main service loop.
 
         Processes frames from the input handler until stopped or stream ends.
-        Uses batched processing when inference_batch_size > 1 for better throughput.
+        Chooses mode based on config:
+        - num_workers > 1: Multi-worker parallel processing
+        - batch_size > 1: Batched processing (single process)
+        - Otherwise: Single-frame processing
         """
         if not self.setup():
             logger.error("Setup failed, cannot run service")
@@ -233,9 +315,16 @@ class BaseService(ABC):
         self._start_time = datetime.utcnow()
         self._setup_signal_handlers()
 
+        num_workers = self.config.num_workers
         batch_size = self.config.inference_batch_size
 
-        if batch_size > 1 and self.supports_batching:
+        if num_workers > 1 and self.supports_multi_worker:
+            logger.info(
+                f"Service {self.config.service_id} starting "
+                f"(multi-worker mode, workers={num_workers}, batch_size={batch_size})"
+            )
+            self._run_multi_worker(num_workers, batch_size)
+        elif batch_size > 1 and self.supports_batching:
             logger.info(
                 f"Service {self.config.service_id} starting "
                 f"(batched mode, batch_size={batch_size})"
@@ -246,6 +335,11 @@ class BaseService(ABC):
                 logger.warning(
                     f"Batch size {batch_size} requested but service doesn't support "
                     f"efficient batching. Falling back to single-frame processing."
+                )
+            if num_workers > 1 and not self.supports_multi_worker:
+                logger.warning(
+                    f"num_workers={num_workers} requested but service doesn't support "
+                    f"multi-worker mode. Falling back to single-frame processing."
                 )
             logger.info(f"Service {self.config.service_id} starting (single-frame mode)")
             self._run_single()
@@ -312,6 +406,159 @@ class BaseService(ABC):
             logger.error(f"Error in batched service loop: {e}")
             self._error = str(e)
         finally:
+            self.shutdown()
+
+    def _run_multi_worker(self, num_workers: int, batch_size: int):
+        """
+        Run with multiple worker processes for true parallel inference.
+
+        Architecture:
+        - Main thread: Distributes frames to worker queues
+        - Worker processes: Run inference in parallel
+        - Collector thread: Gathers results from output queue
+
+        Args:
+            num_workers: Number of worker processes
+            batch_size: Frames per batch
+        """
+        from threading import Thread
+        from core.worker_pool import WorkerPool
+        from core.frame_distributor import FrameDistributor
+
+        # Get model config for workers
+        model_path = self.get_model_path()
+        model_config = self.get_model_config()
+
+        # Build worker configs - distribute across GPUs if multiple
+        base_device = self.config.device
+        worker_configs = []
+        for i in range(num_workers):
+            # If device is cuda:X, can distribute across multiple GPUs
+            device = base_device
+            if base_device.startswith("cuda:"):
+                # For now, use same device - could be extended to multi-GPU
+                device = base_device
+
+            worker_configs.append({
+                "device": device,
+                "model_path": model_path,
+                **model_config,
+            })
+
+        # Calculate queue size
+        queue_size = self.config.worker_queue_size
+        if queue_size == 0:
+            queue_size = num_workers * 4
+
+        # Create worker pool
+        pool = WorkerPool(
+            num_workers=num_workers,
+            worker_init_fn=self.__class__.worker_init,
+            worker_process_fn=self.__class__.worker_process_batch,
+            worker_configs=worker_configs,
+            queue_size=queue_size,
+        )
+
+        # Start workers
+        pool.start()
+
+        # Create frame distributor
+        distributor = FrameDistributor(
+            frame_source=self._input_handler.iterate(),
+            worker_pool=pool,
+            batch_size=batch_size,
+        )
+
+        # Start result collector thread
+        collector_stop = False
+        collector_error = None
+
+        def collect_results():
+            nonlocal collector_error
+            try:
+                for result in pool.results(timeout=1.0):
+                    if not self._running:
+                        break
+
+                    if result.error:
+                        logger.error(f"Worker {result.worker_id} error: {result.error}")
+                        continue
+
+                    # Write results to DB
+                    per_frame_time = result.processing_time_ms / len(result.results)
+                    for i, (frame_result, meta) in enumerate(zip(result.results, result.metadata if hasattr(result, 'metadata') else [{}] * len(result.results))):
+                        if frame_result is not None:
+                            # Add common fields
+                            frame_result["pk"] = f"{self.config.match_id}#{self.config.service_id}"
+                            frame_result["sk"] = meta.get("sequence_number", result.batch_id * batch_size + i)
+                            frame_result["match_id"] = self.config.match_id
+                            frame_result["service_id"] = self.config.service_id
+                            frame_result["frame_number"] = meta.get("sequence_number", result.batch_id * batch_size + i)
+                            frame_result["timestamp_ms"] = meta.get("timestamp_ms", 0)
+                            frame_result["processing_time_ms"] = int(per_frame_time)
+
+                            self._db_writer.queue_item(frame_result)
+
+                    # Update statistics
+                    self._frames_processed += len(result.results)
+                    self._total_processing_time_ms += result.processing_time_ms
+
+                    # Log progress
+                    self._log_progress()
+
+            except Exception as e:
+                collector_error = str(e)
+                logger.error(f"Error in result collector: {e}")
+
+        collector_thread = Thread(target=collect_results, daemon=True)
+        collector_thread.start()
+
+        try:
+            # Start distribution
+            distributor.start()
+
+            # Wait for distribution to complete
+            while not distributor.is_done:
+                if not self._running:
+                    logger.info("Service stopped by signal")
+                    distributor.stop()
+                    break
+                distributor.wait(timeout=1.0)
+
+            # Wait for all results to be collected
+            logger.info("Distribution complete, waiting for results...")
+
+            # Give workers time to finish
+            import time
+            timeout = 30.0
+            start = time.time()
+            while pool._batches_completed < pool._batches_submitted:
+                if time.time() - start > timeout:
+                    logger.warning("Timeout waiting for worker results")
+                    break
+                time.sleep(0.1)
+
+        except Exception as e:
+            logger.error(f"Error in multi-worker service loop: {e}")
+            self._error = str(e)
+
+        finally:
+            # Stop everything
+            distributor.stop()
+            pool.stop(timeout=10.0)
+            collector_thread.join(timeout=5.0)
+
+            if collector_error:
+                self._error = collector_error
+
+            # Log distributor stats
+            stats = distributor.stats
+            logger.info(
+                f"Distributor: {stats.frames_distributed} frames, "
+                f"{stats.batches_distributed} batches, "
+                f"{stats.frames_per_second:.1f} FPS"
+            )
+
             self.shutdown()
 
     def _write_result(

@@ -6,6 +6,8 @@ Contains foundational components used across all services:
 - Source type routing
 - Batch accumulation for GPU efficiency
 - Stream buffering for async processing
+- Worker pool for parallel processing
+- Frame distribution across workers
 - Common utilities
 - Resume logic
 """
@@ -14,6 +16,8 @@ from core.frame_provider import FrameProvider, FramePacket
 from core.source_router import SourceRouter, SourceType, detect_source_type, needs_ffmpeg
 from core.batch_accumulator import BatchAccumulator, Batch
 from core.stream_buffer import StreamBuffer, BufferedFrameProvider, BufferMode
+from core.worker_pool import WorkerPool, WorkerConfig, WorkItem, WorkResult, InferenceWorker
+from core.frame_distributor import FrameDistributor, DistributorStats
 from core.utils import (
     frame_to_timecode,
     get_video_resolution_and_fps,
@@ -44,6 +48,15 @@ __all__ = [
     "StreamBuffer",
     "BufferedFrameProvider",
     "BufferMode",
+    # Worker pool for parallel processing
+    "WorkerPool",
+    "WorkerConfig",
+    "WorkItem",
+    "WorkResult",
+    "InferenceWorker",
+    # Frame distribution
+    "FrameDistributor",
+    "DistributorStats",
     # Utilities
     "frame_to_timecode",
     "get_video_resolution_and_fps",
