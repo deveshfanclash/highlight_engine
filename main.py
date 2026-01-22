@@ -56,9 +56,10 @@ def run_service(
     device: str = "cuda:0",
     local_mode: bool = False,
     output_dir: Optional[str] = None,
-    num_workers: int = 1,
-    queue_size: int = 0,
-    buffer_mode: str = "drop_old",
+    # CLI overrides (None = use config value)
+    num_workers: Optional[int] = None,
+    queue_size: Optional[int] = None,
+    buffer_mode: Optional[str] = None,
 ):
     """
     Run an inference service based on game configuration.
@@ -72,9 +73,9 @@ def run_service(
         device: Device to run on (cpu, cuda:0, etc.)
         local_mode: If True, run without infrastructure dependencies
         output_dir: Output directory for local mode
-        num_workers: Number of worker processes for parallel inference
-        queue_size: Queue size per worker (0 = auto)
-        buffer_mode: Buffer mode for streams ('fifo' or 'drop_old')
+        num_workers: Override num_workers from config (None = use config)
+        queue_size: Override queue_size from config (None = use config)
+        buffer_mode: Override buffer_mode from config (None = use config)
     """
     # Initialize infrastructure config
     infra = get_infra_config(local_mode=local_mode, output_dir=output_dir)
@@ -148,14 +149,17 @@ def run_service(
     # The registry handles config building and service instantiation
     inference_settings = game_template.inference_settings.model_dump()
 
-    # CLI overrides for multi-worker settings
-    if num_workers > 1:
+    # CLI overrides (only apply if explicitly provided)
+    if num_workers is not None:
         inference_settings["num_workers"] = num_workers
-        logger.info(f"Multi-worker mode enabled: {num_workers} workers")
-    if queue_size > 0:
+    if queue_size is not None:
         inference_settings["worker_queue_size"] = queue_size
-    if buffer_mode:
+    if buffer_mode is not None:
         inference_settings["buffer_mode"] = buffer_mode
+
+    # Log effective settings
+    if inference_settings["num_workers"] > 1:
+        logger.info(f"Multi-worker mode: {inference_settings['num_workers']} workers")
 
     service_config_dict = target_service.model_dump()
 
@@ -209,13 +213,9 @@ Resume Modes:
   current - Resume from last written frame (queries DB, skipped in local mode)
   latest  - Start from current stream position (live edge)
 
-Multi-Worker Mode:
-  # Run with 4 parallel worker processes
-  python main.py \\
-    --game-config config/games/football_v1.yaml \\
-    --match-id match_12345 \\
-    --source "https://cdn.example.com/stream.m3u8" \\
-    --num-workers 4
+CLI Overrides:
+  --num-workers, --queue-size, --buffer-mode override values from config.
+  If not provided, values from inference_settings in the YAML config are used.
         """
     )
 
@@ -264,24 +264,24 @@ Multi-Worker Mode:
         help="Enable verbose logging"
     )
 
-    # Multi-worker settings
+    # CLI overrides for inference settings (these override config values)
     parser.add_argument(
         "--num-workers", "-w",
         type=int,
-        default=1,
-        help="Number of worker processes for parallel inference (default: 1)"
+        default=None,
+        help="Override num_workers from config"
     )
     parser.add_argument(
         "--queue-size",
         type=int,
-        default=0,
-        help="Queue size per worker (default: 0 = auto, num_workers * 4)"
+        default=None,
+        help="Override worker_queue_size from config"
     )
     parser.add_argument(
         "--buffer-mode",
         choices=["fifo", "drop_old"],
-        default="drop_old",
-        help="Buffer mode for streams (default: drop_old for real-time)"
+        default=None,
+        help="Override buffer_mode from config"
     )
 
     args = parser.parse_args()
