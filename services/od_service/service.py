@@ -2,9 +2,9 @@
 Object Detection Service
 
 Runs YOLO object detection on video frames.
+Returns typed DetectionResults for type safety.
 """
 
-import os
 import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
@@ -12,8 +12,9 @@ from typing import Optional, Dict, Any, List
 from config.schemas import InputType
 from services.base_service import BaseService, ServiceConfig
 from input_handlers import FrameInputPacket
-from core.utils import ensure_model_available
 from models.yolo_model import YOLOModel, load_yolo_model
+from models.downloader import download_model
+from output.results import DetectionResults
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ class ODService(BaseService):
     """
     Object Detection Service.
 
+    Returns typed DetectionResults with filtering and serialization support.
+
     Usage:
         config = ODServiceConfig(
             match_id="match_123",
@@ -67,14 +70,13 @@ class ODService(BaseService):
             if self.od_config.model_path:
                 local_path = self.od_config.model_path
             elif self.od_config.model_url:
-                # Download if needed
-                model_dir = os.path.join("/tmp", "models", self.od_config.model_id or "default")
-                os.makedirs(model_dir, exist_ok=True)
-                local_path = os.path.join(model_dir, "model.pt")
-
-                if not os.path.exists(local_path):
-                    logger.info(f"Downloading model: {self.od_config.model_url}")
-                    local_path = ensure_model_available(self.od_config.model_url, local_path)
+                # Download using ModelDownloader
+                model_id = self.od_config.model_id or "default"
+                local_path = str(download_model(
+                    source=self.od_config.model_url,
+                    model_id=model_id,
+                    filename="model.pt"
+                ))
             else:
                 logger.error("No model_url or model_path specified")
                 return False
@@ -114,9 +116,9 @@ class ODService(BaseService):
         return True
 
     def process_frame(self, frame_packet: FrameInputPacket) -> Optional[Dict[str, Any]]:
-        """Process a single frame."""
+        """Process a single frame and return dict for DB storage."""
         try:
-            outputs = self._model.predict(
+            results = self._model.predict(
                 [frame_packet.frame],
                 confidence=self.od_config.confidence_threshold,
                 classes=self._class_ids if self._class_ids else None,
@@ -124,12 +126,15 @@ class ODService(BaseService):
                 max_det=self.od_config.max_detections,
             )
 
-            if not outputs:
+            if not results:
                 return None
 
+            # Convert typed DetectionResults to dict for storage
+            detection_result = results[0]
             return {
                 "model_id": self.od_config.model_id,
-                "detections": outputs[0].to_dict_list(),
+                "detections": [d.to_dict() for d in detection_result.detections],
+                "detection_count": detection_result.count,
             }
 
         except Exception as e:
@@ -151,8 +156,8 @@ class ODService(BaseService):
             # Extract frames from packets
             frames = [pkt.frame for pkt in frame_packets]
 
-            # Run batch inference
-            outputs = self._model.predict(
+            # Run batch inference - returns List[DetectionResults]
+            results = self._model.predict(
                 frames,
                 confidence=self.od_config.confidence_threshold,
                 classes=self._class_ids if self._class_ids else None,
@@ -160,18 +165,19 @@ class ODService(BaseService):
                 max_det=self.od_config.max_detections,
             )
 
-            # Convert outputs to result dicts
-            results = []
-            for i, output in enumerate(outputs):
-                if output is None:
-                    results.append(None)
+            # Convert DetectionResults to dicts for storage
+            output = []
+            for detection_result in results:
+                if detection_result is None:
+                    output.append(None)
                 else:
-                    results.append({
+                    output.append({
                         "model_id": self.od_config.model_id,
-                        "detections": output.to_dict_list(),
+                        "detections": [d.to_dict() for d in detection_result.detections],
+                        "detection_count": detection_result.count,
                     })
 
-            return results
+            return output
 
         except Exception as e:
             logger.error(f"Error processing batch: {e}")

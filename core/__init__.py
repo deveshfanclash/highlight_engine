@@ -5,6 +5,7 @@ Contains foundational components used across all services:
 - Frame extraction from streams
 - Source type routing
 - Batch accumulation for GPU efficiency
+- Stream buffering for async processing
 - Common utilities
 - Resume logic
 """
@@ -12,6 +13,7 @@ Contains foundational components used across all services:
 from core.frame_provider import FrameProvider, FramePacket
 from core.source_router import SourceRouter, SourceType, detect_source_type, needs_ffmpeg
 from core.batch_accumulator import BatchAccumulator, Batch, FrameBatchAccumulator, batch_iterate
+from core.stream_buffer import StreamBuffer, BufferedFrameProvider, BufferMode
 from core.utils import (
     frame_to_timecode,
     get_video_resolution_and_fps,
@@ -40,6 +42,10 @@ __all__ = [
     "Batch",
     "FrameBatchAccumulator",
     "batch_iterate",
+    # Stream buffering
+    "StreamBuffer",
+    "BufferedFrameProvider",
+    "BufferMode",
     # Utilities
     "frame_to_timecode",
     "get_video_resolution_and_fps",

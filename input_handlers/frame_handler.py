@@ -3,6 +3,7 @@ Frame Input Handler
 
 Provides frame-by-frame input handling for video sources.
 Wraps FrameProvider for a service-oriented interface.
+Supports optional buffering for async processing via StreamBuffer.
 """
 
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ import numpy as np
 
 from config.schemas import InputType, ProcessingPattern
 from core.frame_provider import FrameProvider, FrameProviderConfig, StreamType, FramePacket
+from core.stream_buffer import StreamBuffer, BufferedFrameProvider, BufferMode
 from input_handlers.base import BaseInputHandler, InputPacket
 
 logger = logging.getLogger(__name__)
@@ -55,14 +57,24 @@ class FrameInputHandler(BaseInputHandler):
     Wraps FrameProvider to provide a consistent interface for services
     that need frame-by-frame processing (object detection, camera view, etc.)
 
+    Supports optional buffering for decoupling frame extraction from processing:
+    - buffered=False (default): Direct iteration, blocking
+    - buffered=True: Background frame extraction with StreamBuffer
+
     Usage:
+        # Direct mode (default)
         handler = FrameInputHandler(
             input_source="https://example.com/stream.m3u8",
             input_type=InputType.HLS,
-            processing_pattern=ProcessingPattern.FRAME_BY_FRAME,
-            target_width=1280,
-            target_height=720,
-            frame_skip=1
+        )
+
+        # Buffered mode for real-time streams
+        handler = FrameInputHandler(
+            input_source="rtsp://camera/stream",
+            input_type=InputType.RTSP,
+            buffered=True,
+            buffer_size=30,
+            buffer_mode=BufferMode.DROP_OLD,  # Real-time: drop old frames
         )
 
         for packet in handler.iterate():
@@ -80,6 +92,10 @@ class FrameInputHandler(BaseInputHandler):
         start_frame: int = 0,
         start_segment: int = 1,
         resolution_preference: str = "_1080p.m3u8",
+        # Buffer settings
+        buffered: bool = False,
+        buffer_size: int = 30,
+        buffer_mode: BufferMode = BufferMode.FIFO,
         **kwargs
     ):
         super().__init__(
@@ -96,8 +112,14 @@ class FrameInputHandler(BaseInputHandler):
         self.start_segment = start_segment
         self.resolution_preference = resolution_preference
 
+        # Buffer settings
+        self.buffered = buffered
+        self.buffer_size = buffer_size
+        self.buffer_mode = buffer_mode
+
         # Frame provider instance
         self._provider: Optional[FrameProvider] = None
+        self._buffered_provider: Optional[BufferedFrameProvider] = None
 
     def initialize(self) -> bool:
         """Initialize the frame provider and detect stream metadata."""
@@ -129,6 +151,8 @@ class FrameInputHandler(BaseInputHandler):
                     "effective_width": self._provider.effective_width,
                     "effective_height": self._provider.effective_height,
                     "fps": self._provider.fps,
+                    "buffered": self.buffered,
+                    "buffer_size": self.buffer_size if self.buffered else None,
                 }
                 self._initialized = True
                 logger.info(f"FrameInputHandler initialized: {self.metadata}")
@@ -143,6 +167,8 @@ class FrameInputHandler(BaseInputHandler):
         """
         Generate frame packets for processing.
 
+        Uses direct iteration or buffered iteration based on config.
+
         Yields:
             FrameInputPacket objects containing frame data
         """
@@ -152,36 +178,91 @@ class FrameInputHandler(BaseInputHandler):
 
         self._running = True
 
+        if self.buffered:
+            yield from self._iterate_buffered()
+        else:
+            yield from self._iterate_direct()
+
+    def _iterate_direct(self) -> Iterator[FrameInputPacket]:
+        """Direct iteration without buffering."""
         try:
             for frame_packet in self._provider.frames():
                 if not self._running:
                     break
 
-                # Convert FramePacket to FrameInputPacket
-                packet = FrameInputPacket(
-                    sequence_number=frame_packet.frame_number,
-                    timestamp_ms=frame_packet.timestamp_ms,
-                    data=frame_packet.frame,
-                    frame=frame_packet.frame,
-                    width=frame_packet.width,
-                    height=frame_packet.height,
-                    segment_number=frame_packet.segment_number,
-                )
-
-                yield packet
+                yield self._convert_packet(frame_packet)
 
         except GeneratorExit:
             logger.info("Frame iteration stopped by consumer")
         finally:
             self._running = False
 
+    def _iterate_buffered(self) -> Iterator[FrameInputPacket]:
+        """Buffered iteration with background frame extraction."""
+        try:
+            # Create buffered provider
+            self._buffered_provider = BufferedFrameProvider(
+                frame_source=self._provider.frames(),
+                buffer_size=self.buffer_size,
+                mode=self.buffer_mode,
+            )
+            self._buffered_provider.start()
+
+            logger.info(
+                f"Buffered frame iteration started "
+                f"(size={self.buffer_size}, mode={self.buffer_mode.value})"
+            )
+
+            # Iterate from buffer
+            for frame_packet in self._buffered_provider.iterate():
+                if not self._running:
+                    break
+
+                yield self._convert_packet(frame_packet)
+
+        except GeneratorExit:
+            logger.info("Buffered frame iteration stopped by consumer")
+        finally:
+            if self._buffered_provider:
+                stats = self._buffered_provider.stats
+                logger.info(f"Buffer stats: {stats}")
+                self._buffered_provider.stop()
+                self._buffered_provider = None
+            self._running = False
+
+    def _convert_packet(self, frame_packet: FramePacket) -> FrameInputPacket:
+        """Convert FramePacket to FrameInputPacket."""
+        return FrameInputPacket(
+            sequence_number=frame_packet.frame_number,
+            timestamp_ms=frame_packet.timestamp_ms,
+            data=frame_packet.frame,
+            frame=frame_packet.frame,
+            width=frame_packet.width,
+            height=frame_packet.height,
+            segment_number=frame_packet.segment_number,
+        )
+
     def stop(self):
         """Stop frame extraction and cleanup."""
         self._running = False
+
+        if self._buffered_provider:
+            self._buffered_provider.stop()
+            self._buffered_provider = None
+
         if self._provider:
             self._provider.stop()
             self._provider = None
+
         logger.info("FrameInputHandler stopped")
+
+    # Buffer statistics
+    @property
+    def buffer_stats(self) -> Optional[dict]:
+        """Get buffer statistics (if buffered mode)."""
+        if self._buffered_provider:
+            return self._buffered_provider.stats
+        return None
 
     # Convenience properties
     @property

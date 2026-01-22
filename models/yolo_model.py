@@ -3,59 +3,35 @@ YOLO Model Wrapper
 
 Simple wrapper for Ultralytics YOLO models.
 Automatically handles class mapping using the class registry.
+Returns typed DetectionResults for type safety.
 """
 
 import time
 import logging
 from typing import List, Optional, Dict, Tuple
-from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
 from config.class_registry import (
     find_model_class_ids,
-    normalize_class_name,
     create_class_mapping,
 )
+from output.results import (
+    BoundingBox,
+    Detection,
+    DetectionResults,
+)
+from models.downloader import ModelDownloader, download_model
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Detection:
-    """Single detection result with normalized coordinates (0-1)."""
-    class_id: int  # Model's native class ID
-    class_name: str  # Canonical class name (e.g., "BALL", "PERSON")
-    confidence: float
-    bbox: Tuple[float, float, float, float]  # (x1, y1, x2, y2) normalized
-
-    def to_dict(self) -> Dict:
-        return {
-            "class_id": self.class_id,
-            "class_name": self.class_name,
-            "confidence": round(self.confidence, 4),
-            "bbox": {
-                "x1": round(self.bbox[0], 6),
-                "y1": round(self.bbox[1], 6),
-                "x2": round(self.bbox[2], 6),
-                "y2": round(self.bbox[3], 6),
-            }
-        }
-
-
-@dataclass
-class ModelOutput:
-    """Output from model inference."""
-    detections: List[Detection]
-    inference_time_ms: float = 0.0
-
-    def to_dict_list(self) -> List[Dict]:
-        return [d.to_dict() for d in self.detections]
 
 
 class YOLOModel:
     """
     YOLO model wrapper with automatic class mapping.
+
+    Returns typed DetectionResults for type safety and easy filtering.
 
     Usage:
         model = YOLOModel("cuda:0")
@@ -64,8 +40,11 @@ class YOLOModel:
         # Get classes user wants to detect
         class_ids = model.get_class_ids_for_names(["ball", "person"])
 
-        # Run inference
-        outputs = model.predict([frame], classes=class_ids)
+        # Run inference - returns List[DetectionResults]
+        results = model.predict([frame], classes=class_ids)
+
+        # Filter results
+        high_conf = results[0].filter(min_confidence=0.8)
     """
 
     def __init__(self, device: str = "cpu", half_precision: bool = False):
@@ -75,6 +54,7 @@ class YOLOModel:
         self._model_classes: Dict[int, str] = {}  # Model's native classes
         self._class_mapping: Dict[int, str] = {}  # Model ID -> Canonical name
         self._loaded = False
+        self._model_path: Optional[str] = None
 
     def load(self, model_path: str) -> bool:
         """Load YOLO model and auto-discover its classes."""
@@ -86,6 +66,7 @@ class YOLOModel:
         try:
             logger.info(f"Loading YOLO model: {model_path}")
             self._model = YOLO(model_path)
+            self._model_path = model_path
 
             # Auto-discover model classes
             if hasattr(self._model, 'names') and self._model.names:
@@ -102,6 +83,34 @@ class YOLOModel:
 
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
+            return False
+
+    def load_from_source(
+        self,
+        source: str,
+        model_id: str,
+        filename: str = "model.pt",
+        force_download: bool = False,
+    ) -> bool:
+        """
+        Load model from any source (URL, HuggingFace, local, S3).
+
+        Uses ModelDownloader for caching and source handling.
+
+        Args:
+            source: URL, local path, HuggingFace model ID, or S3 path
+            model_id: Unique identifier for caching
+            filename: Filename for cached model
+            force_download: Force re-download even if cached
+
+        Returns:
+            True if loaded successfully
+        """
+        try:
+            path = download_model(source, model_id, filename, force_download)
+            return self.load(str(path))
+        except Exception as e:
+            logger.error(f"Failed to load model from source: {e}")
             return False
 
     def get_model_classes(self) -> Dict[int, str]:
@@ -129,7 +138,7 @@ class YOLOModel:
         classes: Optional[List[int]] = None,
         iou: float = 0.45,
         max_det: int = 100,
-    ) -> List[ModelOutput]:
+    ) -> List[DetectionResults]:
         """
         Run inference on frames.
 
@@ -141,7 +150,7 @@ class YOLOModel:
             max_det: Maximum detections per frame
 
         Returns:
-            List of ModelOutput, one per frame
+            List of DetectionResults, one per frame
         """
         if not self._loaded:
             raise RuntimeError("Model not loaded")
@@ -160,13 +169,15 @@ class YOLOModel:
         )
 
         inference_ms = (time.time() - start) * 1000
+        per_frame_ms = inference_ms / len(frames)
 
         outputs = []
         for i, result in enumerate(results):
             detections = self._process_result(result, frames[i].shape)
-            outputs.append(ModelOutput(
+            outputs.append(DetectionResults(
+                frame_number=i,  # Will be updated by service with actual frame number
+                inference_time_ms=per_frame_ms,
                 detections=detections,
-                inference_time_ms=inference_ms / len(frames),
             ))
 
         return outputs
@@ -201,7 +212,7 @@ class YOLOModel:
                 class_id=cls_id,
                 class_name=class_name,
                 confidence=round(conf, 4),
-                bbox=(x1, y1, x2, y2),
+                bbox=BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2),
             ))
 
         return detections
@@ -217,6 +228,15 @@ class YOLOModel:
     @property
     def is_loaded(self) -> bool:
         return self._loaded
+
+    @property
+    def model_path(self) -> Optional[str]:
+        return self._model_path
+
+    @property
+    def class_names(self) -> Dict[int, str]:
+        """Alias for get_model_classes()."""
+        return self._model_classes
 
 
 def load_yolo_model(
@@ -240,6 +260,55 @@ def load_yolo_model(
     model = YOLOModel(device=device, half_precision=half_precision)
     if not model.load(model_path):
         raise RuntimeError(f"Failed to load model: {model_path}")
+    if warmup:
+        model.warmup()
+    return model
+
+
+def load_yolo_from_source(
+    source: str,
+    model_id: str,
+    device: str = "cpu",
+    half_precision: bool = False,
+    warmup: bool = True,
+    force_download: bool = False,
+) -> YOLOModel:
+    """
+    Load a YOLO model from any source.
+
+    Args:
+        source: URL, local path, HuggingFace model ID, or S3 path
+        model_id: Unique identifier for caching
+        device: Device ("cpu", "cuda:0", etc.)
+        half_precision: Use FP16
+        warmup: Run warmup inference
+        force_download: Force re-download even if cached
+
+    Returns:
+        Loaded YOLOModel
+
+    Examples:
+        # From URL
+        model = load_yolo_from_source(
+            "https://example.com/model.pt",
+            model_id="custom_v1"
+        )
+
+        # From HuggingFace
+        model = load_yolo_from_source(
+            "ultralytics/yolov8n",
+            model_id="yolov8n"
+        )
+
+        # From local
+        model = load_yolo_from_source(
+            "/path/to/model.pt",
+            model_id="local_model"
+        )
+    """
+    model = YOLOModel(device=device, half_precision=half_precision)
+    if not model.load_from_source(source, model_id, force_download=force_download):
+        raise RuntimeError(f"Failed to load model from: {source}")
     if warmup:
         model.warmup()
     return model
