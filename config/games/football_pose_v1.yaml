@@ -78,21 +78,6 @@ models:
 
 
 # =============================================================================
-# MODEL ASSIGNMENTS
-# =============================================================================
-model_assignments:
-  - model_id: "yolo_football_v2"
-    role: "default"
-    priority: 1
-    class_filter: []
-
-  - model_id: "yolov8n_pose"
-    role: "pose"
-    priority: 2
-    class_filter: []
-
-
-# =============================================================================
 # SERVICES
 # =============================================================================
 services:
@@ -101,7 +86,7 @@ services:
   # -------------------------------------------------------------------------
   - service_type: "object_detection"
     enabled: true
-    model_roles: ["default"]
+    model_id: "yolo_football_v2"
     db_table_name: "inference_results"
     db_batch_size: 12
     db_flush_interval_ms: 250
@@ -111,7 +96,7 @@ services:
   # -------------------------------------------------------------------------
   - service_type: "pose_estimation"
     enabled: true
-    model_roles: ["pose"]
+    model_id: "yolov8n_pose"
     keypoint_confidence_threshold: 0.5
     db_table_name: "inference_results"
     db_batch_size: 12

@@ -112,27 +112,18 @@ def run_service(
 
     logger.info(f"Running service: {target_service.service_type.value}")
 
-    # Get model for this service
-    model_roles = getattr(target_service, 'model_roles', ['default'])
-    model_config = None
-
-    for role in model_roles:
-        assignment = game_template.get_model_assignment(role)
-        if assignment:
-            model = model_registry.get_model(assignment.model_id)
-            if model:
-                model_config = model.model_dump()
-                if assignment.params_override:
-                    model_config["default_params"] = {
-                        **model_config.get("default_params", {}),
-                        **assignment.params_override.model_dump(exclude_none=True)
-                    }
-                break
-
-    if not model_config:
-        logger.error(f"No model found for service roles: {model_roles}")
+    # Get model for this service (direct lookup by model_id)
+    model_id = getattr(target_service, 'model_id', None)
+    if not model_id:
+        logger.error(f"Service {target_service.service_type.value} has no model_id configured")
         return
 
+    model = model_registry.get_model(model_id)
+    if not model:
+        logger.error(f"Model '{model_id}' not found in registry")
+        return
+
+    model_config = model.model_dump()
     logger.info(f"Using model: {model_config['model_id']}")
 
     # Calculate resume position

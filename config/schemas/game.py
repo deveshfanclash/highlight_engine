@@ -18,39 +18,6 @@ from config.schemas.enums import (
     ServiceType,
     ProcessingPattern,
 )
-from config.schemas.model import ModelParams
-
-
-# =============================================================================
-# MODEL ASSIGNMENT
-# =============================================================================
-
-class ModelAssignment(BaseModel):
-    """
-    Defines how a model is used in a game.
-
-    Specifies:
-    - Which model to use (reference by ID)
-    - What role it plays (primary OD, pose, etc.)
-    - Game-specific parameter overrides
-    """
-    model_id: str = Field(..., description="Reference to model in registry")
-    role: str = Field(
-        default="default",
-        description="Role in game (e.g., 'default', 'pose')"
-    )
-
-    # Parameter overrides for this game
-    params_override: Optional[ModelParams] = Field(
-        None,
-        description="Override model's default params for this game"
-    )
-
-    # Priority for this model (higher = processed first)
-    priority: int = Field(default=0)
-
-    class Config:
-        protected_namespaces = ()
 
 
 # =============================================================================
@@ -73,37 +40,29 @@ class BaseServiceTemplate(BaseModel):
     db_batch_size: int = Field(default=12, ge=1)
     db_flush_interval_ms: int = Field(default=250, ge=0)
 
-    class Config:
-        extra = "allow"
+    model_config = {"extra": "allow", "protected_namespaces": ()}
 
 
 class ODServiceTemplate(BaseServiceTemplate):
     """Object Detection service template"""
     service_type: ServiceType = Field(default=ServiceType.OBJECT_DETECTION)
 
-    # Which model roles to run
-    model_roles: List[str] = Field(
-        default_factory=lambda: ["default"],
-        description="Model roles to use from model_assignments"
-    )
+    # Model to use (direct reference to model_id in models section)
+    model_id: str = Field(..., description="Model ID to use for this service")
 
     # Processing settings
     target_width: Optional[int] = Field(None, description="Resize width")
     target_height: Optional[int] = Field(None, description="Resize height")
 
-    class Config:
-        protected_namespaces = ()
+    model_config = {"protected_namespaces": ()}
 
 
 class PoseServiceTemplate(BaseServiceTemplate):
     """Pose Estimation service template"""
     service_type: ServiceType = Field(default=ServiceType.POSE_ESTIMATION)
 
-    # Which model roles to run
-    model_roles: List[str] = Field(
-        default_factory=lambda: ["default"],
-        description="Model roles to use from model_assignments"
-    )
+    # Model to use (direct reference to model_id in models section)
+    model_id: str = Field(..., description="Model ID to use for this service")
 
     # Processing settings
     target_width: Optional[int] = Field(None, description="Resize width")
@@ -115,8 +74,7 @@ class PoseServiceTemplate(BaseServiceTemplate):
         description="Minimum confidence for keypoint visibility"
     )
 
-    class Config:
-        protected_namespaces = ()
+    model_config = {"protected_namespaces": ()}
 
 
 # Union of all service templates
@@ -177,22 +135,15 @@ class GameTemplate(BaseModel):
     Game Template Configuration (Tier 2).
 
     Defines the inference logic for a sport:
-    - Which models to use (references to Tier 1)
-    - How to use them (roles, class filtering)
-    - Which services to run
+    - Which models to use
+    - Which services to run (each service references a model directly)
     """
     # Identity
     game_id: str = Field(..., description="Unique game identifier")
     game_name: str = Field(..., description="Human-readable name")
     description: str = Field(default="")
 
-    # Model assignments
-    model_assignments: List[ModelAssignment] = Field(
-        default_factory=list,
-        description="How models are used in this game"
-    )
-
-    # Service templates
+    # Service templates (each service specifies its model_id directly)
     services: List[ServiceTemplateUnion] = Field(
         default_factory=list,
         description="Services to run for this game"
@@ -217,16 +168,9 @@ class GameTemplate(BaseModel):
         """Get services of a specific type"""
         return [s for s in self.services if s.service_type.value == service_type]
 
-    def get_model_assignment(self, role: str) -> Optional[ModelAssignment]:
-        """Get model assignment by role"""
-        for assignment in self.model_assignments:
-            if assignment.role == role:
-                return assignment
-        return None
-
     def get_model_ids(self) -> List[str]:
-        """Get all model IDs referenced by this game"""
-        return [a.model_id for a in self.model_assignments]
+        """Get all model IDs referenced by services"""
+        return [s.model_id for s in self.services if hasattr(s, 'model_id')]
 
 
 # =============================================================================
@@ -249,40 +193,34 @@ def create_service_template_from_dict(data: Dict[str, Any]) -> ServiceTemplateUn
 def create_game_template(
     game_id: str,
     game_name: str,
-    model_ids: List[str],
+    od_model_id: str,
+    pose_model_id: Optional[str] = None,
     category: GameCategory = GameCategory.BALL_SPORT,
-    enable_pose: bool = False,
 ) -> GameTemplate:
     """
     Factory function to create a basic game template.
 
     Creates a standard template with:
-    - One OD service with specified models
+    - One OD service with specified model
     - Pose estimation service (optional)
     """
-    assignments = [
-        ModelAssignment(model_id=mid, role="default")
-        for mid in model_ids
-    ]
-
     services = [
         ODServiceTemplate(
             service_type=ServiceType.OBJECT_DETECTION,
-            model_roles=["default"],
+            model_id=od_model_id,
             enabled=True,
         ),
     ]
 
-    if enable_pose:
+    if pose_model_id:
         services.append(PoseServiceTemplate(
             service_type=ServiceType.POSE_ESTIMATION,
-            model_roles=["pose"],
+            model_id=pose_model_id,
             enabled=True,
         ))
 
     return GameTemplate(
         game_id=game_id,
         game_name=game_name,
-        model_assignments=assignments,
         services=services,
     )

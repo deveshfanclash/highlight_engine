@@ -57,8 +57,7 @@ class MatchOverrides(BaseModel):
 
     Override resolution order:
     1. Model defaults (ModelConfig.default_params)
-    2. Game assignment (GameTemplate.model_assignments[].params_override)
-    3. Match override (MatchConfig.overrides) <- Highest priority
+    2. Match override (MatchConfig.overrides) <- Highest priority
     """
 
     # Inference settings override

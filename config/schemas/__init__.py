@@ -10,8 +10,7 @@ Tier 1: Model Registry (model.py)
 
 Tier 2: Game Template (game.py)
     - Sport-specific logic
-    - Model assignments with roles
-    - Service templates with settings
+    - Service templates (each service references model_id directly)
 
 Tier 3: Match Config (match.py)
     - Runtime match configuration
@@ -49,7 +48,6 @@ from config.schemas.model import (
 # TIER 2: GAME TEMPLATE
 # =============================================================================
 from config.schemas.game import (
-    ModelAssignment,
     BaseServiceTemplate,
     ODServiceTemplate,
     PoseServiceTemplate,
@@ -106,7 +104,6 @@ __all__ = [
     "ModelRegistryConfig",
 
     # Tier 2: Game
-    "ModelAssignment",
     "BaseServiceTemplate",
     "ODServiceTemplate",
     "PoseServiceTemplate",

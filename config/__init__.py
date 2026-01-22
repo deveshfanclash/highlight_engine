@@ -34,7 +34,6 @@ from config.schemas import (
     ModelRegistryConfig,
 
     # Tier 2: Game Template
-    ModelAssignment,
     BaseServiceTemplate,
     ODServiceTemplate,
     PoseServiceTemplate,
@@ -96,7 +95,6 @@ __all__ = [
     "ModelRegistryConfig",
 
     # Tier 2: Game Template
-    "ModelAssignment",
     "BaseServiceTemplate",
     "ODServiceTemplate",
     "PoseServiceTemplate",

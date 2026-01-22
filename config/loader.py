@@ -12,7 +12,6 @@ from pathlib import Path
 from config.schemas.enums import ModelType, ModelArchitecture, GameCategory
 from config.schemas.model import ModelParams, ModelConfig, ModelRegistryConfig
 from config.schemas.game import (
-    ModelAssignment,
     InferenceSettings,
     GameTemplate,
     create_service_template_from_dict,
@@ -45,12 +44,7 @@ class ConfigLoader:
     @staticmethod
     def _parse_game_template(data: Dict[str, Any]) -> GameTemplate:
         """Parse game template."""
-        # Parse model assignments
-        model_assignments = []
-        for ma in data.get("model_assignments", []):
-            model_assignments.append(ModelAssignment(**ma))
-
-        # Parse services
+        # Parse services (each service now has model_id directly)
         services = []
         for svc in data.get("services", []):
             services.append(create_service_template_from_dict(svc))
@@ -63,7 +57,6 @@ class ConfigLoader:
             game_id=data["game_id"],
             game_name=data["game_name"],
             game_category=GameCategory(data.get("game_category", "ball_sport")),
-            model_assignments=model_assignments,
             services=services,
             inference_settings=inference_settings,
         )
