@@ -35,6 +35,18 @@ models:
       half_precision: false
 
 # =============================================================================
+# DEFAULTS (Global settings - can be overridden per service)
+# =============================================================================
+defaults:
+  inference:
+    frame_skip: 1
+    processing_resolution: [1280, 720]
+  output:
+    db_table_name: "inference_results"
+    db_batch_size: 12
+    db_flush_interval_ms: 250
+
+# =============================================================================
 # SERVICES
 # =============================================================================
 services:
@@ -42,15 +54,4 @@ services:
     enabled: true
     model_id: "yolo_football"
     device: "cuda:0"
-    db_table_name: "inference_results"
-    db_batch_size: 12
-
-# =============================================================================
-# INFERENCE SETTINGS
-# =============================================================================
-inference_settings:
-  target_fps: 30
-  frame_skip: 1
-  processing_resolution:
-    - 1280
-    - 720
+    # No overrides = uses all defaults

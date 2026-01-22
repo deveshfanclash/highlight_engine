@@ -235,16 +235,16 @@ def test_auto_buffer():
 
 def test_config_settings():
     """Test that config settings are properly defined."""
-    from config.schemas.game import InferenceSettings
+    from config.schemas.game import InferenceDefaults
     from services.base_service import ServiceConfig
 
     print("\n" + "=" * 60)
     print("TEST 4: Config Settings")
     print("=" * 60)
 
-    # Test InferenceSettings defaults
-    settings = InferenceSettings()
-    print(f"InferenceSettings defaults:")
+    # Test InferenceDefaults defaults
+    settings = InferenceDefaults()
+    print(f"InferenceDefaults defaults:")
     print(f"  num_workers: {settings.num_workers}")
     print(f"  worker_queue_size: {settings.worker_queue_size}")
     print(f"  enable_buffering: {settings.enable_buffering}")

@@ -12,7 +12,9 @@ from pathlib import Path
 from config.schemas.enums import ModelType, ModelArchitecture, GameCategory
 from config.schemas.model import ModelParams, ModelConfig, ModelRegistryConfig
 from config.schemas.game import (
-    InferenceSettings,
+    Defaults,
+    InferenceDefaults,
+    OutputDefaults,
     GameTemplate,
     create_service_template_from_dict,
 )
@@ -48,16 +50,19 @@ class ConfigLoader:
         for svc in data.get("services", []):
             services.append(create_service_template_from_dict(svc))
 
-        # Parse inference settings
-        inference_data = data.get("inference_settings", {})
-        inference_settings = InferenceSettings(**inference_data)
+        # Parse defaults (new hybrid structure)
+        defaults_data = data.get("defaults", {})
+        defaults = Defaults(
+            inference=InferenceDefaults(**defaults_data.get("inference", {})),
+            output=OutputDefaults(**defaults_data.get("output", {})),
+        )
 
         return GameTemplate(
             game_id=data["game_id"],
             game_name=data["game_name"],
             game_category=GameCategory(data.get("game_category", "ball_sport")),
             services=services,
-            inference_settings=inference_settings,
+            defaults=defaults,
         )
 
     @staticmethod
@@ -76,7 +81,7 @@ class ConfigLoader:
             raise FileNotFoundError(f"Config not found: {yaml_path}")
 
         with open(path, 'r') as f:
-            data = yaml.safe_load(f)
+            data: dict[list[dict[str, Any]]] = yaml.safe_load(f)
 
         # Parse models
         models = [ConfigLoader._parse_model_config(m) for m in data.get("models", [])]

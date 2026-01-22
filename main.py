@@ -125,9 +125,21 @@ def run_service(
     model_config = model.model_dump()
     logger.info(f"Using model: {model_config['model_id']}")
 
-    # Calculate resume position
+    # Resolve settings: defaults + service-specific overrides
+    inference_settings = game_template.resolve_inference_settings(target_service)
+    output_settings = game_template.resolve_output_settings(target_service)
+
+    # Build service config dict with resolved settings
+    service_config_dict = target_service.model_dump()
+    service_config_dict.update(output_settings)
+
+    # Log effective settings
+    if inference_settings["num_workers"] > 1:
+        logger.info(f"Multi-worker mode: {inference_settings['num_workers']} workers")
+
+    # Calculate resume position (using resolved db_table_name)
     service_id = f"{target_service.service_type.value}_{model_config['model_id']}"
-    db_table_name = getattr(target_service, 'db_table_name', 'inference_results')
+    db_table_name = output_settings.get("db_table_name", "inference_results")
 
     resume_position = get_resume_position(
         mode=resume_mode,
@@ -142,16 +154,6 @@ def run_service(
         f"Resume position: frame={resume_position.frame_number}, "
         f"segment={resume_position.segment_number}"
     )
-
-    # Create service using ServiceRegistry
-    # The registry handles config building and service instantiation
-    inference_settings = game_template.inference_settings.model_dump()
-
-    # Log effective settings
-    if inference_settings["num_workers"] > 1:
-        logger.info(f"Multi-worker mode: {inference_settings['num_workers']} workers")
-
-    service_config_dict = target_service.model_dump()
 
     effective_device = service_config_dict.get("device", "cuda:0")
     logger.info(f"Device: {effective_device}")

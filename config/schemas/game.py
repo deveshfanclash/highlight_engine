@@ -7,7 +7,7 @@ Think of this as "the playbook" for a sport:
 - Which models to use
 - Which services to run
 - How to interpret model outputs (class mapping)
-- Default inference settings
+- Default settings with per-service overrides (hybrid pattern)
 """
 
 from typing import List, Optional, Union, Dict, Any
@@ -21,6 +21,78 @@ from config.schemas.enums import (
 
 
 # =============================================================================
+# DEFAULTS (Global settings that can be overridden per-service)
+# =============================================================================
+
+class InferenceDefaults(BaseModel):
+    """Default inference settings - can be overridden per service."""
+    frame_skip: int = Field(default=1, ge=1, description="Process every Nth frame")
+    processing_resolution: List[int] = Field(
+        default=[1280, 720],
+        description="Default processing resolution [width, height]"
+    )
+
+    # Parallelism settings
+    num_workers: int = Field(
+        default=1, ge=1,
+        description="Number of worker processes for parallel inference"
+    )
+    worker_queue_size: int = Field(
+        default=0, ge=0,
+        description="Queue size per worker (0 = auto: num_workers * 4)"
+    )
+
+    # Buffer settings
+    enable_buffering: Optional[bool] = Field(
+        default=None,
+        description="Enable frame buffering (None = auto-detect based on source type)"
+    )
+    buffer_size: int = Field(
+        default=30, ge=1,
+        description="Buffer size for frame buffering"
+    )
+    buffer_mode: str = Field(
+        default="drop_old",
+        description="Buffer mode: 'fifo' or 'drop_old'"
+    )
+
+
+class OutputDefaults(BaseModel):
+    """Default output settings - can be overridden per service."""
+    db_table_name: str = Field(default="inference_results")
+    db_batch_size: int = Field(default=12, ge=1)
+    db_flush_interval_ms: int = Field(default=250, ge=0)
+
+
+class Defaults(BaseModel):
+    """Container for all default settings."""
+    inference: InferenceDefaults = Field(default_factory=InferenceDefaults)
+    output: OutputDefaults = Field(default_factory=OutputDefaults)
+
+
+# =============================================================================
+# SERVICE OVERRIDE SCHEMAS
+# =============================================================================
+
+class InferenceOverrides(BaseModel):
+    """Per-service inference overrides. Only specify what differs from defaults."""
+    frame_skip: Optional[int] = Field(None, ge=1)
+    processing_resolution: Optional[List[int]] = None
+    num_workers: Optional[int] = Field(None, ge=1)
+    worker_queue_size: Optional[int] = Field(None, ge=0)
+    enable_buffering: Optional[bool] = None
+    buffer_size: Optional[int] = Field(None, ge=1)
+    buffer_mode: Optional[str] = None
+
+
+class OutputOverrides(BaseModel):
+    """Per-service output overrides. Only specify what differs from defaults."""
+    db_table_name: Optional[str] = None
+    db_batch_size: Optional[int] = Field(None, ge=1)
+    db_flush_interval_ms: Optional[int] = Field(None, ge=0)
+
+
+# =============================================================================
 # SERVICE TEMPLATES
 # =============================================================================
 
@@ -29,7 +101,7 @@ class BaseServiceTemplate(BaseModel):
     service_type: ServiceType = Field(..., description="Type of service")
     enabled: bool = Field(default=True, description="Whether service should run")
 
-    # Device configuration
+    # Device configuration (explicit per-service, no global default)
     device: str = Field(
         default="cuda:0",
         description="Device to run on: 'cpu', 'cuda:0', 'cuda:1', etc."
@@ -39,12 +111,10 @@ class BaseServiceTemplate(BaseModel):
     processing_pattern: ProcessingPattern = Field(
         default=ProcessingPattern.FRAME_BY_FRAME
     )
-    frame_skip: int = Field(default=1, ge=1, description="Process every Nth frame")
 
-    # Output settings
-    db_table_name: str = Field(default="inference_results")
-    db_batch_size: int = Field(default=12, ge=1)
-    db_flush_interval_ms: int = Field(default=250, ge=0)
+    # Per-service overrides (optional - only specify what differs from defaults)
+    inference_overrides: Optional[InferenceOverrides] = None
+    output_overrides: Optional[OutputOverrides] = None
 
     model_config = {"extra": "allow", "protected_namespaces": ()}
 
@@ -92,47 +162,6 @@ ServiceTemplateUnion = Union[
 
 
 # =============================================================================
-# INFERENCE SETTINGS
-# =============================================================================
-
-class InferenceSettings(BaseModel):
-    """Global inference settings for a game."""
-    target_fps: int = Field(default=25, description="Target FPS for processing")
-    frame_skip: int = Field(
-        default=1, ge=1,
-        description="Global frame skip (can be overridden per service)"
-    )
-    processing_resolution: List[int] = Field(
-        default=[1280, 720],
-        description="Default processing resolution [width, height]"
-    )
-
-    # Parallelism settings
-    num_workers: int = Field(
-        default=1, ge=1,
-        description="Number of worker processes for parallel inference"
-    )
-    worker_queue_size: int = Field(
-        default=0, ge=0,
-        description="Queue size per worker (0 = auto: num_workers * 4)"
-    )
-
-    # Buffer settings
-    enable_buffering: Optional[bool] = Field(
-        default=None,
-        description="Enable frame buffering (None = auto-detect based on source type)"
-    )
-    buffer_size: int = Field(
-        default=30, ge=1,
-        description="Buffer size for frame buffering"
-    )
-    buffer_mode: str = Field(
-        default="drop_old",
-        description="Buffer mode: 'fifo' or 'drop_old'"
-    )
-
-
-# =============================================================================
 # GAME TEMPLATE
 # =============================================================================
 
@@ -143,6 +172,7 @@ class GameTemplate(BaseModel):
     Defines the inference logic for a sport:
     - Which models to use
     - Which services to run (each service references a model directly)
+    - Default settings with per-service override support
     """
     # Identity
     game_id: str = Field(..., description="Unique game identifier")
@@ -155,8 +185,8 @@ class GameTemplate(BaseModel):
         description="Services to run for this game"
     )
 
-    # Global settings
-    inference_settings: InferenceSettings = Field(default_factory=InferenceSettings)
+    # Global defaults (can be overridden per-service)
+    defaults: Defaults = Field(default_factory=Defaults)
 
     # Game category
     game_category: GameCategory = Field(default=GameCategory.BALL_SPORT)
@@ -177,6 +207,48 @@ class GameTemplate(BaseModel):
     def get_model_ids(self) -> List[str]:
         """Get all model IDs referenced by services"""
         return [s.model_id for s in self.services if hasattr(s, 'model_id')]
+
+    def resolve_inference_settings(self, service: ServiceTemplateUnion) -> Dict[str, Any]:
+        """
+        Resolve inference settings for a service.
+        Merges global defaults with service-specific overrides.
+
+        Args:
+            service: The service template to resolve settings for
+
+        Returns:
+            Dict with resolved inference settings
+        """
+        # Start with global defaults
+        resolved = self.defaults.inference.model_dump()
+
+        # Apply service overrides if present
+        if service.inference_overrides:
+            overrides = service.inference_overrides.model_dump(exclude_none=True)
+            resolved.update(overrides)
+
+        return resolved
+
+    def resolve_output_settings(self, service: ServiceTemplateUnion) -> Dict[str, Any]:
+        """
+        Resolve output settings for a service.
+        Merges global defaults with service-specific overrides.
+
+        Args:
+            service: The service template to resolve settings for
+
+        Returns:
+            Dict with resolved output settings
+        """
+        # Start with global defaults
+        resolved = self.defaults.output.model_dump()
+
+        # Apply service overrides if present
+        if service.output_overrides:
+            overrides = service.output_overrides.model_dump(exclude_none=True)
+            resolved.update(overrides)
+
+        return resolved
 
 
 # =============================================================================
@@ -202,6 +274,7 @@ def create_game_template(
     od_model_id: str,
     pose_model_id: Optional[str] = None,
     category: GameCategory = GameCategory.BALL_SPORT,
+    defaults: Optional[Defaults] = None,
 ) -> GameTemplate:
     """
     Factory function to create a basic game template.
@@ -209,6 +282,7 @@ def create_game_template(
     Creates a standard template with:
     - One OD service with specified model
     - Pose estimation service (optional)
+    - Default settings (or provided defaults)
     """
     services = [
         ODServiceTemplate(
@@ -229,4 +303,5 @@ def create_game_template(
         game_id=game_id,
         game_name=game_name,
         services=services,
+        defaults=defaults or Defaults(),
     )

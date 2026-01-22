@@ -48,11 +48,19 @@ from config.schemas.model import (
 # TIER 2: GAME TEMPLATE
 # =============================================================================
 from config.schemas.game import (
+    # Defaults
+    InferenceDefaults,
+    OutputDefaults,
+    Defaults,
+    # Overrides
+    InferenceOverrides,
+    OutputOverrides,
+    # Service templates
     BaseServiceTemplate,
     ODServiceTemplate,
     PoseServiceTemplate,
     ServiceTemplateUnion,
-    InferenceSettings,
+    # Game template
     GameTemplate,
     create_service_template_from_dict,
     create_game_template,
@@ -103,12 +111,17 @@ __all__ = [
     "ModelConfig",
     "ModelRegistryConfig",
 
-    # Tier 2: Game
+    # Tier 2: Game - Defaults
+    "InferenceDefaults",
+    "OutputDefaults",
+    "Defaults",
+    "InferenceOverrides",
+    "OutputOverrides",
+    # Tier 2: Game - Services
     "BaseServiceTemplate",
     "ODServiceTemplate",
     "PoseServiceTemplate",
     "ServiceTemplateUnion",
-    "InferenceSettings",
     "GameTemplate",
     "create_service_template_from_dict",
     "create_game_template",

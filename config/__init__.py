@@ -33,12 +33,17 @@ from config.schemas import (
     ModelConfig,
     ModelRegistryConfig,
 
-    # Tier 2: Game Template
+    # Tier 2: Game Template - Defaults
+    InferenceDefaults,
+    OutputDefaults,
+    Defaults,
+    InferenceOverrides,
+    OutputOverrides,
+    # Tier 2: Game Template - Services
     BaseServiceTemplate,
     ODServiceTemplate,
     PoseServiceTemplate,
     ServiceTemplateUnion,
-    InferenceSettings,
     GameTemplate,
     create_service_template_from_dict,
     create_game_template,
@@ -94,12 +99,17 @@ __all__ = [
     "ModelConfig",
     "ModelRegistryConfig",
 
-    # Tier 2: Game Template
+    # Tier 2: Game Template - Defaults
+    "InferenceDefaults",
+    "OutputDefaults",
+    "Defaults",
+    "InferenceOverrides",
+    "OutputOverrides",
+    # Tier 2: Game Template - Services
     "BaseServiceTemplate",
     "ODServiceTemplate",
     "PoseServiceTemplate",
     "ServiceTemplateUnion",
-    "InferenceSettings",
     "GameTemplate",
     "create_service_template_from_dict",
     "create_game_template",

@@ -22,12 +22,16 @@ description: "Football inference with object detection and pose estimation"
 
 
 # =============================================================================
-# INFERENCE SETTINGS
+# DEFAULTS (Global settings - can be overridden per service)
 # =============================================================================
-inference_settings:
-  target_fps: 25
-  frame_skip: 1
-  processing_resolution: [1280, 720]
+defaults:
+  inference:
+    frame_skip: 1
+    processing_resolution: [1280, 720]
+  output:
+    db_table_name: "inference_results"
+    db_batch_size: 12
+    db_flush_interval_ms: 250
 
 
 # =============================================================================
@@ -84,21 +88,19 @@ services:
     enabled: true
     model_id: "yolo_football_v2"
     device: "cuda:0"
-    db_table_name: "inference_results"
-    db_batch_size: 12
-    db_flush_interval_ms: 250
+    # No overrides = uses all defaults
 
   # -------------------------------------------------------------------------
-  # Pose Estimation Service
+  # Pose Estimation Service (example with overrides)
   # -------------------------------------------------------------------------
   - service_type: "pose_estimation"
     enabled: true
     model_id: "yolov8n_pose"
     device: "cuda:0"
     keypoint_confidence_threshold: 0.5
-    db_table_name: "inference_results"
-    db_batch_size: 12
-    db_flush_interval_ms: 250
+    # Example: override inference settings for this service only
+    # inference_overrides:
+    #   frame_skip: 2  # Process every 2nd frame for pose (less critical)
 
 
 # =============================================================================

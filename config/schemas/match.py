@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from config.schemas.enums import MatchStatus, InputType
 from config.schemas.model import ModelParams
-from config.schemas.game import InferenceSettings
+from config.schemas.game import InferenceOverrides, OutputOverrides
 
 
 # =============================================================================
@@ -56,14 +56,21 @@ class MatchOverrides(BaseModel):
     These take precedence over GameTemplate and ModelConfig defaults.
 
     Override resolution order:
-    1. Model defaults (ModelConfig.default_params)
-    2. Match override (MatchConfig.overrides) <- Highest priority
+    1. Game defaults (GameTemplate.defaults)
+    2. Service overrides (service.inference_overrides)
+    3. Match overrides (MatchConfig.overrides) <- Highest priority
     """
 
-    # Inference settings override
-    inference_settings: Optional[InferenceSettings] = Field(
+    # Inference settings override (partial - only specify what differs)
+    inference_overrides: Optional[InferenceOverrides] = Field(
         None,
-        description="Override global inference settings"
+        description="Override inference settings for this match"
+    )
+
+    # Output settings override (partial - only specify what differs)
+    output_overrides: Optional[OutputOverrides] = Field(
+        None,
+        description="Override output settings for this match"
     )
 
     # Model parameter overrides (model_id -> params)
