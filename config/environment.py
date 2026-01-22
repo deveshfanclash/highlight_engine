@@ -137,9 +137,9 @@ def _load_from_env() -> InfraConfig:
     )
 
 
-def _create_local_config(output_dir: Optional[str] = None) -> InfraConfig:
+def _create_local_config(base_path: Optional[str] = None) -> InfraConfig:
     """Create a local-mode config that works without any environment variables."""
-    output_path = Path(output_dir) if output_dir else PROJECT_ROOT / "output"
+    base_path_resolved = Path(base_path) if base_path else PROJECT_ROOT
 
     return InfraConfig(
         local_mode=True,
@@ -165,10 +165,10 @@ def _create_local_config(output_dir: Optional[str] = None) -> InfraConfig:
         log_level="INFO",
 
         # Paths
-        base_path=PROJECT_ROOT,
-        models_cache_path=PROJECT_ROOT / "models_cache",
-        logs_path=PROJECT_ROOT / "logs",
-        output_path=output_path,
+        base_path=base_path_resolved,
+        models_cache_path=base_path_resolved / "models_cache",
+        logs_path=base_path_resolved / "logs",
+        output_path=base_path_resolved / "output",
     )
 
 
@@ -178,7 +178,7 @@ _config: Optional[InfraConfig] = None
 
 def get_infra_config(
     local_mode: bool = False,
-    output_dir: Optional[str] = None,
+    base_path: Optional[str] = None,
     force_reload: bool = False
 ) -> InfraConfig:
     """
@@ -186,7 +186,7 @@ def get_infra_config(
 
     Args:
         local_mode: If True, return config for local mode (no infrastructure)
-        output_dir: Custom output directory (only used in local mode)
+        base_path: Custom base path directory (only used in local mode)
         force_reload: If True, reload config even if already loaded
 
     Returns:
@@ -198,7 +198,7 @@ def get_infra_config(
         return _config
 
     if local_mode:
-        config = _create_local_config(output_dir)
+        config = _create_local_config(base_path)
     else:
         config = _load_from_env()
 

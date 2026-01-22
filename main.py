@@ -60,9 +60,7 @@ def run_service(
     resume_mode: ResumeMode,
     service_type: Optional[str] = None,
     local_mode: bool = False,
-    output_dir: Optional[str] = None,
-    # CLI overrides (None = use config value)
-    device: Optional[str] = None,
+    base_path: Optional[str] = None,
 ):
     """
     Run an inference service based on game configuration.
@@ -74,15 +72,14 @@ def run_service(
         resume_mode: Resume mode (start, current, latest)
         service_type: Specific service type to run (optional): Current system supports only one service at a time
         local_mode: If True, run without infrastructure dependencies
-        output_dir: Output directory for local mode
-        device: Override device from config (None = use config value)
+        base_path: Base path directory for local mode
     """
     # Initialize infrastructure config
-    infra = get_infra_config(local_mode=local_mode, output_dir=output_dir)
+    infra = get_infra_config(local_mode=local_mode, base_path=base_path)
 
     if local_mode:
         logger.info("Running in LOCAL MODE - no AWS credentials required")
-        output_dir = output_dir or str(infra.output_path)
+        base_path = base_path or str(infra.base_path)
 
     # Load game configuration
     logger.info(f"Loading game config from: {game_config_path}")
@@ -98,7 +95,7 @@ def run_service(
         logger.error("No enabled services found in game config")
         return
 
-    # Select service to run
+    # Select service to run start------------------------------
     target_service = None
     if service_type:
         for service in enabled_services:
@@ -112,6 +109,7 @@ def run_service(
         target_service = enabled_services[0]
 
     logger.info(f"Running service: {target_service.service_type.value}")
+    #----Code to add service override for a single type-----
 
     # Get model for this service (direct lookup by model_id)
     model_id = getattr(target_service, 'model_id', None)
@@ -155,10 +153,6 @@ def run_service(
 
     service_config_dict = target_service.model_dump()
 
-    # CLI override for device (if provided, override config value)
-    if device is not None:
-        service_config_dict["device"] = device
-
     effective_device = service_config_dict.get("device", "cuda:0")
     logger.info(f"Device: {effective_device}")
 
@@ -173,7 +167,7 @@ def run_service(
             start_frame=max(0, resume_position.frame_number),
             start_segment=max(0, resume_position.segment_number),
             local_mode=local_mode,
-            output_dir=output_dir,
+            output_dir=base_path,
         )
     except ValueError as e:
         logger.error(f"Failed to create service: {e}")
@@ -190,30 +184,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Inference System Entry Point",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Local mode (no AWS credentials needed)
-  python main.py \\
-    --game-config config/games/football_v1.yaml \\
-    --match-id test_123 \\
-    --source /path/to/video.mp4 \\
-    --local
-
-  # Production mode with DynamoDB output
-  python main.py \\
-    --game-config config/games/football_v1.yaml \\
-    --match-id match_12345 \\
-    --source "https://cdn.example.com/stream.m3u8" \\
-    --resume current
-
-Resume Modes:
-  start   - Fresh start from frame 0
-  current - Resume from last written frame (queries DB, skipped in local mode)
-  latest  - Start from current stream position (live edge)
-
-CLI Overrides:
-  --device overrides the device setting from service config.
-  If not provided, the device value from the YAML config is used.
+        epilog="""CLI Overrides: 
+        --device overrides the device setting from service config.
+        If not provided, the device value from the YAML config is used.
         """
     )
 
@@ -243,18 +216,13 @@ CLI Overrides:
         help="Specific service type to run (default: first enabled)"
     )
     parser.add_argument(
-        "--device", "-d",
-        default=None,
-        help="Override device from config (e.g., cpu, cuda:0, cuda:1)"
-    )
-    parser.add_argument(
         "--local", "-l",
         action="store_true",
         help="Run in local mode (no AWS credentials required, outputs to files)"
     )
     parser.add_argument(
-        "--output-dir", "-o",
-        help="Output directory for local mode (default: ./output)"
+        "--base-path", "-b",
+        help="Base path directory for local mode (default: ./output)"
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -279,8 +247,7 @@ CLI Overrides:
             resume_mode=resume_mode,
             service_type=args.service_type,
             local_mode=args.local,
-            output_dir=args.output_dir,
-            device=args.device,
+            base_path=args.base_path,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
