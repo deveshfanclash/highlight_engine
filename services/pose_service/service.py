@@ -52,40 +52,6 @@ class PoseServiceConfig(ServiceConfig):
     # Class mapping (usually just person class for pose)
     class_mapping: Dict[int, str] = field(default_factory=lambda: {0: "PERSON"})
 
-    @classmethod
-    def from_game_config(
-        cls,
-        match_id: str,
-        input_source: str,
-        model_config: Dict[str, Any],
-        service_config: Dict[str, Any],
-        inference_settings: Dict[str, Any],
-        input_type: InputType = InputType.HLS
-    ) -> "PoseServiceConfig":
-        """
-        Create PoseServiceConfig from GameConfig components.
-        """
-        model_params = model_config.get("params", {})
-
-        return cls(
-            match_id=match_id,
-            service_id=f"pose_{model_config.get('model_id', 'unknown')}",
-            input_source=input_source,
-            input_type=input_type,
-            target_width=inference_settings.get("processing_resolution", [1280, 720])[0],
-            target_height=inference_settings.get("processing_resolution", [1280, 720])[1],
-            frame_skip=inference_settings.get("frame_skip", 1),
-            device=service_config.get("device", "cuda:0"),
-            model_id=model_config.get("model_id", ""),
-            model_url=model_config.get("model_url", ""),
-            model_architecture=model_config.get("model_architecture", "yolov8-pose"),
-            confidence_threshold=model_params.get("confidence_threshold", 0.5),
-            iou_threshold=model_params.get("iou_threshold", 0.45),
-            max_detections=model_params.get("max_detections", 100),
-            half_precision=model_params.get("half_precision", False),
-            keypoint_confidence_threshold=service_config.get("keypoint_confidence_threshold", 0.5),
-        )
-
 
 class PoseService(BaseService):
     """

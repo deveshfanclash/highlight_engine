@@ -12,7 +12,7 @@ Contains foundational components used across all services:
 
 from core.frame_provider import FrameProvider, FramePacket
 from core.source_router import SourceRouter, SourceType, detect_source_type, needs_ffmpeg
-from core.batch_accumulator import BatchAccumulator, Batch, FrameBatchAccumulator, batch_iterate
+from core.batch_accumulator import BatchAccumulator, Batch
 from core.stream_buffer import StreamBuffer, BufferedFrameProvider, BufferMode
 from core.utils import (
     frame_to_timecode,
@@ -40,8 +40,6 @@ __all__ = [
     # Batching
     "BatchAccumulator",
     "Batch",
-    "FrameBatchAccumulator",
-    "batch_iterate",
     # Stream buffering
     "StreamBuffer",
     "BufferedFrameProvider",

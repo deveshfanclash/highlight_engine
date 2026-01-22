@@ -12,8 +12,8 @@ This follows the BatchAccumulator pattern from Ultralytics architecture:
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import TypeVar, Generic, Iterator, List, Callable, Any, Optional
+from dataclasses import dataclass
+from typing import TypeVar, Generic, Iterator, List
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,6 @@ class BatchAccumulator(Generic[T]):
     Configuration:
         batch_size: Number of items per batch (default: 8)
         drop_last: If True, drop incomplete final batch (default: False)
-        timeout_items: Max items to buffer before forcing yield (for latency control)
     """
 
     def __init__(
@@ -129,118 +128,6 @@ class BatchAccumulator(Generic[T]):
         if batch_items and not self.drop_last:
             yield Batch(items=batch_items, indices=batch_indices)
 
-    def process_batched(
-        self,
-        items: Iterator[T],
-        process_fn: Callable[[List[T]], List[Any]],
-    ) -> Iterator[tuple]:
-        """
-        Process items in batches and yield (item, result) pairs.
-
-        This is a convenience method that handles the common pattern of:
-        1. Accumulating items into batches
-        2. Processing each batch
-        3. Yielding (item, result) pairs in order
-
-        Args:
-            items: Iterator of items to process
-            process_fn: Function that takes a list of items and returns results
-
-        Yields:
-            Tuples of (original_item, result) for each item
-        """
-        for batch in self.batches(items):
-            results = process_fn(batch.items)
-
-            # Ensure results match batch size
-            if len(results) != batch.size:
-                logger.warning(
-                    f"Batch size mismatch: expected {batch.size} results, "
-                    f"got {len(results)}"
-                )
-                # Pad or truncate results as needed
-                if len(results) < batch.size:
-                    results = list(results) + [None] * (batch.size - len(results))
-                else:
-                    results = results[:batch.size]
-
-            for item, result in zip(batch.items, results):
-                yield item, result
-
-
-# =============================================================================
-# SPECIALIZED BATCH ACCUMULATORS
-# =============================================================================
-
-class FrameBatchAccumulator(BatchAccumulator):
-    """
-    Batch accumulator specialized for frame processing.
-
-    Adds frame-specific utilities:
-    - Extract frames from packets
-    - Track frame numbers for logging
-    - Support for frame skipping within batches
-    """
-
-    def __init__(
-        self,
-        batch_size: int = 8,
-        drop_last: bool = False,
-        frame_extractor: Optional[Callable[[Any], Any]] = None,
-    ):
-        """
-        Initialize frame batch accumulator.
-
-        Args:
-            batch_size: Number of frames per batch
-            drop_last: If True, drop incomplete final batch
-            frame_extractor: Function to extract frame from packet (default: packet.frame)
-        """
-        super().__init__(batch_size=batch_size, drop_last=drop_last)
-        self.frame_extractor = frame_extractor or (lambda pkt: pkt.frame)
-
-    def extract_frames(self, batch: Batch) -> List[Any]:
-        """Extract frames from a batch of packets."""
-        return [self.frame_extractor(item) for item in batch.items]
-
-    def batches_with_frames(self, items: Iterator[T]) -> Iterator[tuple]:
-        """
-        Yield (batch, frames) tuples for convenience.
-
-        Args:
-            items: Iterator of frame packets
-
-        Yields:
-            Tuples of (Batch, List[frames])
-        """
-        for batch in self.batches(items):
-            frames = self.extract_frames(batch)
-            yield batch, frames
-
-
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
-
-def batch_iterate(
-    items: Iterator[T],
-    batch_size: int = 8,
-    drop_last: bool = False,
-) -> Iterator[Batch[T]]:
-    """
-    Convenience function for simple batching.
-
-    Args:
-        items: Iterator of items
-        batch_size: Items per batch
-        drop_last: Drop incomplete final batch
-
-    Yields:
-        Batch objects
-    """
-    accumulator = BatchAccumulator(batch_size=batch_size, drop_last=drop_last)
-    yield from accumulator.batches(items)
-
 
 # =============================================================================
 # TESTING
@@ -265,24 +152,13 @@ if __name__ == "__main__":
     for batch in batches:
         all_indices.extend(batch.indices)
     assert all_indices == list(range(25)), "Index mismatch!"
-    print("  ✓ All indices accounted for")
+    print("  All indices accounted for")
 
     # Test drop_last
     accumulator_drop = BatchAccumulator(batch_size=8, drop_last=True)
     batches_drop = list(accumulator_drop.batches(iter(items)))
     print(f"\n  With drop_last=True: {len(batches_drop)} batches")
     assert len(batches_drop) == 3, "Should have 3 complete batches"
-    print("  ✓ Incomplete batch dropped")
-
-    # Test process_batched
-    print("\nTesting process_batched...")
-
-    def double_batch(items):
-        return [x * 2 for x in items]
-
-    results = list(accumulator.process_batched(iter(range(10)), double_batch))
-    expected = [(i, i * 2) for i in range(10)]
-    assert results == expected, f"Expected {expected}, got {results}"
-    print("  ✓ process_batched works correctly")
+    print("  Incomplete batch dropped")
 
     print("\nAll tests passed!")

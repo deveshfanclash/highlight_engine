@@ -6,7 +6,6 @@ Provides model wrappers for different architectures:
 
 Also provides:
 - ModelDownloader for caching and downloading from various sources
-- ModelRegistry for centralized model management
 """
 
 from models.yolo_model import YOLOModel, load_yolo_model, load_yolo_from_source
@@ -16,11 +15,6 @@ from models.downloader import (
     DownloadResult,
     download_model,
     get_downloader,
-)
-from models.registry import (
-    ModelRegistry,
-    get_global_registry,
-    init_global_registry,
 )
 
 # Re-export typed results for convenience
@@ -37,10 +31,6 @@ __all__ = [
     "DownloadResult",
     "download_model",
     "get_downloader",
-    # Registry
-    "ModelRegistry",
-    "get_global_registry",
-    "init_global_registry",
     # Results (convenience re-export)
     "Detection",
     "DetectionResults",
