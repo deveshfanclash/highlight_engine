@@ -41,9 +41,6 @@ class ModelConfig(BaseModel):
     # Default parameters
     default_params: ModelParams = Field(default_factory=ModelParams)
 
-    # GPU required hint
-    requires_gpu: bool = Field(default=True)
-
     class Config:
         protected_namespaces = ()
 

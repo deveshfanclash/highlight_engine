@@ -52,8 +52,6 @@ models:
     default_params:
       confidence_threshold: 0.5
       iou_threshold: 0.45
-    resources:
-      requires_gpu: false
 
   # -------------------------------------------------------------------------
   # Pose Estimation Model
@@ -73,8 +71,6 @@ models:
     default_params:
       confidence_threshold: 0.5
       iou_threshold: 0.45
-    resources:
-      requires_gpu: true
 
 
 # =============================================================================
@@ -87,6 +83,7 @@ services:
   - service_type: "object_detection"
     enabled: true
     model_id: "yolo_football_v2"
+    device: "cuda:0"
     db_table_name: "inference_results"
     db_batch_size: 12
     db_flush_interval_ms: 250
@@ -97,6 +94,7 @@ services:
   - service_type: "pose_estimation"
     enabled: true
     model_id: "yolov8n_pose"
+    device: "cuda:0"
     keypoint_confidence_threshold: 0.5
     db_table_name: "inference_results"
     db_batch_size: 12

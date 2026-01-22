@@ -321,7 +321,6 @@ def build_od_config(
     inference_settings: dict,
     start_frame: int = 0,
     start_segment: int = 0,
-    device: str = "cuda:0",
     local_mode: bool = False,
     output_dir: str = None,
 ) -> ODServiceConfig:
@@ -335,11 +334,10 @@ def build_od_config(
         match_id: Match identifier
         source_url: Stream URL or file path
         model_config: Model configuration dict
-        service_config: Service template dict
+        service_config: Service template dict (includes device)
         inference_settings: Inference settings dict
         start_frame: Frame to start from (for resume)
         start_segment: Segment to start from (for HLS resume)
-        device: Device to run on
         local_mode: If True, output to local files
         output_dir: Output directory for local mode
 
@@ -384,8 +382,8 @@ def build_od_config(
         buffer_size=inference_settings.get("buffer_size", 30),
         buffer_mode=inference_settings.get("buffer_mode", "drop_old"),
 
-        # Device
-        device=device,
+        # Device (from service config)
+        device=service_config.get("device", "cuda:0"),
 
         # Database
         db_table_name=service_config.get("db_table_name", "inference_results"),

@@ -59,9 +59,10 @@ def run_service(
     source_url: str,
     resume_mode: ResumeMode,
     service_type: Optional[str] = None,
-    device: str = "cuda:0",
     local_mode: bool = False,
     output_dir: Optional[str] = None,
+    # CLI overrides (None = use config value)
+    device: Optional[str] = None,
 ):
     """
     Run an inference service based on game configuration.
@@ -71,13 +72,10 @@ def run_service(
         match_id: Match identifier
         source_url: Stream URL or file path
         resume_mode: Resume mode (start, current, latest)
-        service_type: Specific service type to run (optional)
-        device: Device to run on (cpu, cuda:0, etc.)
+        service_type: Specific service type to run (optional): Current system supports only one service at a time
         local_mode: If True, run without infrastructure dependencies
         output_dir: Output directory for local mode
-        num_workers: Override num_workers from config (None = use config)
-        queue_size: Override queue_size from config (None = use config)
-        buffer_mode: Override buffer_mode from config (None = use config)
+        device: Override device from config (None = use config value)
     """
     # Initialize infrastructure config
     infra = get_infra_config(local_mode=local_mode, output_dir=output_dir)
@@ -151,19 +149,18 @@ def run_service(
     # The registry handles config building and service instantiation
     inference_settings = game_template.inference_settings.model_dump()
 
-    # CLI overrides (only apply if explicitly provided)
-    if num_workers is not None:
-        inference_settings["num_workers"] = num_workers
-    if queue_size is not None:
-        inference_settings["worker_queue_size"] = queue_size
-    if buffer_mode is not None:
-        inference_settings["buffer_mode"] = buffer_mode
-
     # Log effective settings
     if inference_settings["num_workers"] > 1:
         logger.info(f"Multi-worker mode: {inference_settings['num_workers']} workers")
 
     service_config_dict = target_service.model_dump()
+
+    # CLI override for device (if provided, override config value)
+    if device is not None:
+        service_config_dict["device"] = device
+
+    effective_device = service_config_dict.get("device", "cuda:0")
+    logger.info(f"Device: {effective_device}")
 
     try:
         service = ServiceRegistry.create(
@@ -175,7 +172,6 @@ def run_service(
             inference_settings=inference_settings,
             start_frame=max(0, resume_position.frame_number),
             start_segment=max(0, resume_position.segment_number),
-            device=device,
             local_mode=local_mode,
             output_dir=output_dir,
         )
@@ -216,8 +212,8 @@ Resume Modes:
   latest  - Start from current stream position (live edge)
 
 CLI Overrides:
-  --num-workers, --queue-size, --buffer-mode override values from config.
-  If not provided, values from inference_settings in the YAML config are used.
+  --device overrides the device setting from service config.
+  If not provided, the device value from the YAML config is used.
         """
     )
 
@@ -248,8 +244,8 @@ CLI Overrides:
     )
     parser.add_argument(
         "--device", "-d",
-        default="cuda:0",
-        help="Device to run on (default: cuda:0)"
+        default=None,
+        help="Override device from config (e.g., cpu, cuda:0, cuda:1)"
     )
     parser.add_argument(
         "--local", "-l",
@@ -264,26 +260,6 @@ CLI Overrides:
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose logging"
-    )
-
-    # CLI overrides for inference settings (these override config values)
-    parser.add_argument(
-        "--num-workers", "-w",
-        type=int,
-        default=None,
-        help="Override num_workers from config"
-    )
-    parser.add_argument(
-        "--queue-size",
-        type=int,
-        default=None,
-        help="Override worker_queue_size from config"
-    )
-    parser.add_argument(
-        "--buffer-mode",
-        choices=["fifo", "drop_old"],
-        default=None,
-        help="Override buffer_mode from config"
     )
 
     args = parser.parse_args()
@@ -302,12 +278,9 @@ CLI Overrides:
             source_url=args.source,
             resume_mode=resume_mode,
             service_type=args.service_type,
-            device=args.device,
             local_mode=args.local,
             output_dir=args.output_dir,
-            num_workers=args.num_workers,
-            queue_size=args.queue_size,
-            buffer_mode=args.buffer_mode,
+            device=args.device,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

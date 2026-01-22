@@ -29,6 +29,12 @@ class BaseServiceTemplate(BaseModel):
     service_type: ServiceType = Field(..., description="Type of service")
     enabled: bool = Field(default=True, description="Whether service should run")
 
+    # Device configuration
+    device: str = Field(
+        default="cuda:0",
+        description="Device to run on: 'cpu', 'cuda:0', 'cuda:1', etc."
+    )
+
     # Processing settings
     processing_pattern: ProcessingPattern = Field(
         default=ProcessingPattern.FRAME_BY_FRAME

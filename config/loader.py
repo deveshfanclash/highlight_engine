@@ -38,7 +38,6 @@ class ConfigLoader:
             model_path=data.get("model_path", ""),
             classes_to_detect=data.get("classes_to_detect", []),
             default_params=params,
-            requires_gpu=data.get("requires_gpu", True),
         )
 
     @staticmethod

@@ -41,6 +41,7 @@ services:
   - service_type: "object_detection"
     enabled: true
     model_id: "yolo_football"
+    device: "cuda:0"
     db_table_name: "inference_results"
     db_batch_size: 12
 
