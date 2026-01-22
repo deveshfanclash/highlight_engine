@@ -46,6 +46,12 @@ def setup_logging(verbose: bool = False):
         handlers=[logging.StreamHandler(sys.stdout)]
     )
 
+#Load dotenv from .env file if not from orchestrator or shell set with env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 def run_service(
     game_config_path: str,
@@ -56,10 +62,6 @@ def run_service(
     device: str = "cuda:0",
     local_mode: bool = False,
     output_dir: Optional[str] = None,
-    # CLI overrides (None = use config value)
-    num_workers: Optional[int] = None,
-    queue_size: Optional[int] = None,
-    buffer_mode: Optional[str] = None,
 ):
     """
     Run an inference service based on game configuration.

@@ -60,7 +60,7 @@ class InfraConfig:
     log_level: str = "INFO"
 
     # Paths (dynamic based on project root)
-    base_path: Path = field(default_factory=lambda: PROJECT_ROOT)
+    base_path: Path = field(default_factory=lambda: PROJECT_ROOT/"runs")
     models_cache_path: Path = field(default_factory=lambda: PROJECT_ROOT / "models_cache")
     logs_path: Path = field(default_factory=lambda: PROJECT_ROOT / "logs")
     output_path: Path = field(default_factory=lambda: PROJECT_ROOT / "output")
@@ -104,6 +104,7 @@ class InfraConfig:
 
 
 def _load_from_env() -> InfraConfig:
+    #TODO: load from dotenv if env is not registered througha container or shell set with env.
     """Load infrastructure config from environment variables."""
     return InfraConfig(
         local_mode=False,
