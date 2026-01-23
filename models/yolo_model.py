@@ -22,7 +22,7 @@ from output.results import (
     Detection,
     DetectionResults,
 )
-from models.downloader import ModelDownloader, download_model
+from models.downloader import download_model
 
 logger = logging.getLogger(__name__)
 
@@ -85,29 +85,21 @@ class YOLOModel:
             logger.error(f"Failed to load model: {e}")
             return False
 
-    def load_from_source(
-        self,
-        source: str,
-        model_id: str,
-        filename: str = "model.pt",
-        force_download: bool = False,
-    ) -> bool:
+    def load_from_source(self, source: str, filename: str = "model.pt") -> bool:
         """
         Load model from any source (URL, HuggingFace, local, S3).
 
-        Uses ModelDownloader for caching and source handling.
+        Downloads fresh each time (no caching).
 
         Args:
             source: URL, local path, HuggingFace model ID, or S3 path
-            model_id: Unique identifier for caching
-            filename: Filename for cached model
-            force_download: Force re-download even if cached
+            filename: Filename for downloaded model
 
         Returns:
             True if loaded successfully
         """
         try:
-            path = download_model(source, model_id, filename, force_download)
+            path = download_model(source, filename)
             return self.load(str(path))
         except Exception as e:
             logger.error(f"Failed to load model from source: {e}")
@@ -246,69 +238,36 @@ def load_yolo_model(
     warmup: bool = True
 ) -> YOLOModel:
     """
-    Load a YOLO model.
+    Load a YOLO model from local path or any source.
+
+    For remote sources (URLs, S3, HuggingFace), downloads fresh each time.
 
     Args:
-        model_path: Path to .pt file
+        model_path: Path to .pt file, URL, S3 path, or HuggingFace model ID
         device: Device ("cpu", "cuda:0", etc.)
         half_precision: Use FP16
         warmup: Run warmup inference
-
-    Returns:
-        Loaded YOLOModel
-    """
-    model = YOLOModel(device=device, half_precision=half_precision)
-    if not model.load(model_path):
-        raise RuntimeError(f"Failed to load model: {model_path}")
-    if warmup:
-        model.warmup()
-    return model
-
-
-def load_yolo_from_source(
-    source: str,
-    model_id: str,
-    device: str = "cpu",
-    half_precision: bool = False,
-    warmup: bool = True,
-    force_download: bool = False,
-) -> YOLOModel:
-    """
-    Load a YOLO model from any source.
-
-    Args:
-        source: URL, local path, HuggingFace model ID, or S3 path
-        model_id: Unique identifier for caching
-        device: Device ("cpu", "cuda:0", etc.)
-        half_precision: Use FP16
-        warmup: Run warmup inference
-        force_download: Force re-download even if cached
 
     Returns:
         Loaded YOLOModel
 
     Examples:
-        # From URL
-        model = load_yolo_from_source(
-            "https://example.com/model.pt",
-            model_id="custom_v1"
-        )
+        # Local file
+        model = load_yolo_model("/path/to/model.pt", device="cuda:0")
 
-        # From HuggingFace
-        model = load_yolo_from_source(
-            "ultralytics/yolov8n",
-            model_id="yolov8n"
-        )
+        # From URL (downloads fresh)
+        model = load_yolo_model("https://example.com/model.pt")
 
-        # From local
-        model = load_yolo_from_source(
-            "/path/to/model.pt",
-            model_id="local_model"
-        )
+        # From S3 (downloads fresh)
+        model = load_yolo_model("s3://bucket/models/yolo.pt")
     """
     model = YOLOModel(device=device, half_precision=half_precision)
-    if not model.load_from_source(source, model_id, force_download=force_download):
-        raise RuntimeError(f"Failed to load model from: {source}")
+
+    # Use load_from_source which handles all source types
+    if not model.load_from_source(model_path):
+        raise RuntimeError(f"Failed to load model: {model_path}")
+
     if warmup:
         model.warmup()
+
     return model

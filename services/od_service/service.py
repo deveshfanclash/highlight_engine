@@ -66,20 +66,14 @@ class ODService(BaseService):
     def initialize(self) -> bool:
         """Initialize service - download and load model."""
         try:
-            # Determine model path
-            if self.od_config.model_path:
-                local_path = self.od_config.model_path
-            elif self.od_config.model_url:
-                # Download using ModelDownloader
-                model_id = self.od_config.model_id or "default"
-                local_path = str(download_model(
-                    source=self.od_config.model_url,
-                    model_id=model_id,
-                    filename="model.pt"
-                ))
-            else:
+            # Determine model source (local path or URL)
+            model_source = self.od_config.model_path or self.od_config.model_url
+            if not model_source:
                 logger.error("No model_url or model_path specified")
                 return False
+
+            # Download if URL, or validate if local path
+            local_path = str(download_model(model_source))
 
             # Load model
             logger.info(f"Loading model: {local_path}")
@@ -122,16 +116,10 @@ class ODService(BaseService):
 
     def get_model_path(self) -> str:
         """Get path to model file for worker initialization."""
-        if self.od_config.model_path:
-            return self.od_config.model_path
-        elif self.od_config.model_url:
-            model_id = self.od_config.model_id or "default"
-            return str(download_model(
-                source=self.od_config.model_url,
-                model_id=model_id,
-                filename="model.pt"
-            ))
-        raise ValueError("No model_url or model_path specified")
+        model_source = self.od_config.model_path or self.od_config.model_url
+        if not model_source:
+            raise ValueError("No model_url or model_path specified")
+        return str(download_model(model_source))
 
     def get_model_config(self) -> Dict[str, Any]:
         """Get model configuration for worker initialization."""
