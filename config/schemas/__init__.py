@@ -63,7 +63,6 @@ from config.schemas.game import (
     # Game template
     GameTemplate,
     create_service_template_from_dict,
-    create_game_template,
 )
 
 # =============================================================================
@@ -124,7 +123,6 @@ __all__ = [
     "ServiceTemplateUnion",
     "GameTemplate",
     "create_service_template_from_dict",
-    "create_game_template",
 
     # Tier 3: Match
     "ResumePosition",

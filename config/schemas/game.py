@@ -240,7 +240,7 @@ class GameTemplate(BaseModel):
         Returns:
             Dict with resolved output settings
         """
-        # Start with global defaults
+        # Start with global defaults. Model dump dumps the pydantic object into plain diciontary
         resolved = self.defaults.output.model_dump()
 
         # Apply service overrides if present
@@ -266,42 +266,3 @@ def create_service_template_from_dict(data: Dict[str, Any]) -> ServiceTemplateUn
 
     template_class = type_to_class.get(service_type, BaseServiceTemplate)
     return template_class(**data)
-
-
-def create_game_template(
-    game_id: str,
-    game_name: str,
-    od_model_id: str,
-    pose_model_id: Optional[str] = None,
-    category: GameCategory = GameCategory.BALL_SPORT,
-    defaults: Optional[Defaults] = None,
-) -> GameTemplate:
-    """
-    Factory function to create a basic game template.
-
-    Creates a standard template with:
-    - One OD service with specified model
-    - Pose estimation service (optional)
-    - Default settings (or provided defaults)
-    """
-    services = [
-        ODServiceTemplate(
-            service_type=ServiceType.OBJECT_DETECTION,
-            model_id=od_model_id,
-            enabled=True,
-        ),
-    ]
-
-    if pose_model_id:
-        services.append(PoseServiceTemplate(
-            service_type=ServiceType.POSE_ESTIMATION,
-            model_id=pose_model_id,
-            enabled=True,
-        ))
-
-    return GameTemplate(
-        game_id=game_id,
-        game_name=game_name,
-        services=services,
-        defaults=defaults or Defaults(),
-    )
