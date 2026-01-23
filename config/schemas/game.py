@@ -134,23 +134,7 @@ class ODServiceTemplate(BaseServiceTemplate):
 
 
 class PoseServiceTemplate(BaseServiceTemplate):
-    """Pose Estimation service template"""
-    service_type: ServiceType = Field(default=ServiceType.POSE_ESTIMATION)
-
-    # Model to use (direct reference to model_id in models section)
-    model_id: str = Field(..., description="Model ID to use for this service")
-
-    # Processing settings
-    target_width: Optional[int] = Field(None, description="Resize width")
-    target_height: Optional[int] = Field(None, description="Resize height")
-
-    # Keypoint settings
-    keypoint_confidence_threshold: float = Field(
-        default=0.5, ge=0.0, le=1.0,
-        description="Minimum confidence for keypoint visibility"
-    )
-
-    model_config = {"protected_namespaces": ()}
+    pass
 
 
 # Union of all service templates

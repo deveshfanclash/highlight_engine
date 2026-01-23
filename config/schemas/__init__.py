@@ -1,7 +1,7 @@
 """
 Configuration Schemas
 
-3-Tier Configuration System:
+2-Tier Configuration System:
 
 Tier 1: Model Registry (model.py)
     - Pure ML model definitions
@@ -11,11 +11,6 @@ Tier 1: Model Registry (model.py)
 Tier 2: Game Template (game.py)
     - Sport-specific logic
     - Service templates (each service references model_id directly)
-
-Tier 3: Match Config (match.py)
-    - Runtime match configuration
-    - Stream URL and match ID
-    - Override mechanism
 
 Infrastructure config is handled separately in config/environment.py
 """
@@ -66,18 +61,6 @@ from config.schemas.game import (
 )
 
 # =============================================================================
-# TIER 3: MATCH CONFIG
-# =============================================================================
-from config.schemas.match import (
-    ResumePosition,
-    ServiceOverride,
-    MatchOverrides,
-    MatchMetadata,
-    MatchConfig,
-    create_match_config,
-)
-
-# =============================================================================
 # OUTPUT SCHEMAS
 # =============================================================================
 from config.schemas.output import (
@@ -123,14 +106,6 @@ __all__ = [
     "ServiceTemplateUnion",
     "GameTemplate",
     "create_service_template_from_dict",
-
-    # Tier 3: Match
-    "ResumePosition",
-    "ServiceOverride",
-    "MatchOverrides",
-    "MatchMetadata",
-    "MatchConfig",
-    "create_match_config",
 
     # Output
     "BoundingBox",

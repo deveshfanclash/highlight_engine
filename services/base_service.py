@@ -93,7 +93,7 @@ class BaseService(ABC):
     def __init__(self, config: ServiceConfig):
         self.config = config
         self._running = False
-        self._start_time: Optional[datetime] = None
+        self._start_time = Optional[datetime] = None
 
         # Will be initialized in setup()
         self._input_handler: Optional[FrameInputHandler] = None

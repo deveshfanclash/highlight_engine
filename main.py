@@ -32,7 +32,11 @@ from config.loader import ConfigLoader
 from config.environment import get_infra_config
 from config.schemas import ServiceType
 from core.resume import ResumeMode, get_resume_position
-from services.registry import ServiceRegistry
+from services import registry
+
+# Import services to trigger registration
+from services import od_service  # noqa: F401
+from services import pose_service  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +163,7 @@ def run_service(
     logger.info(f"Device: {effective_device}")
 
     try:
-        service = ServiceRegistry.create(
+        service = registry.create(
             service_type=target_service.service_type,
             match_id=match_id,
             source_url=source_url,
