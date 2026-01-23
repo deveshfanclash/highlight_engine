@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Iterator, Optional, Any, Dict
 import logging
 
-from config.schemas import InputType, ProcessingPattern
+from config.schemas import InputType
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +50,10 @@ class BaseInputHandler(ABC):
         self,
         input_source: str,
         input_type: InputType,
-        processing_pattern: ProcessingPattern,
         **kwargs
     ):
         self.input_source = input_source
         self.input_type = input_type
-        self.processing_pattern = processing_pattern
         self.config = kwargs
 
         # State

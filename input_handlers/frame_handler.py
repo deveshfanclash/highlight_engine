@@ -12,7 +12,7 @@ import logging
 
 import numpy as np
 
-from config.schemas import InputType, ProcessingPattern
+from config.schemas import InputType
 from core.frame_provider import FrameProvider, FrameProviderConfig, StreamType, FramePacket
 from core.stream_buffer import StreamBuffer, BufferedFrameProvider, BufferMode
 from core.source_router import SourceRouter
@@ -96,7 +96,6 @@ class FrameInputHandler(BaseInputHandler):
         self,
         input_source: str,
         input_type: InputType,
-        processing_pattern: ProcessingPattern = ProcessingPattern.FRAME_BY_FRAME,
         target_width: Optional[int] = None,
         target_height: Optional[int] = None,
         frame_skip: int = 1,
@@ -112,7 +111,6 @@ class FrameInputHandler(BaseInputHandler):
         super().__init__(
             input_source=input_source,
             input_type=input_type,
-            processing_pattern=processing_pattern,
             **kwargs
         )
 

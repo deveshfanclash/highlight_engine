@@ -37,12 +37,6 @@ class InputType(str, Enum):
     FILE = "file"
 
 
-class ProcessingPattern(str, Enum):
-    """Processing patterns for services"""
-    FRAME_BY_FRAME = "frame_by_frame"
-    FRAME_BATCHES = "frame_batches"
-
-
 class DeviceType(str, Enum):
     """Device types for inference"""
     CPU = "cpu"

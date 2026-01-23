@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, Union, List
 from datetime import datetime
 
-from config.schemas import InputType, ProcessingPattern
+from config.schemas import InputType
 from input_handlers import FrameInputHandler, FrameInputPacket
 from db.dynamo import DynamoDBWriter, LocalFileWriter, create_writer
 from core.batch_accumulator import BatchAccumulator, Batch
@@ -93,7 +93,7 @@ class BaseService(ABC):
     def __init__(self, config: ServiceConfig):
         self.config = config
         self._running = False
-        self._start_time = Optional[datetime] = None
+        self._start_time: Optional[datetime] = None
 
         # Will be initialized in setup()
         self._input_handler: Optional[FrameInputHandler] = None
@@ -120,7 +120,6 @@ class BaseService(ABC):
             self._input_handler = FrameInputHandler(
                 input_source=self.config.input_source,
                 input_type=self.config.input_type,
-                processing_pattern=ProcessingPattern.FRAME_BY_FRAME,
                 target_width=self.config.target_width,
                 target_height=self.config.target_height,
                 start_frame=self.config.start_frame,
@@ -303,9 +302,8 @@ class BaseService(ABC):
 
         Processes frames from the input handler until stopped or stream ends.
         Chooses mode based on config:
-        - num_workers > 1: Multi-worker parallel processing
-        - batch_size > 1: Batched processing (single process)
-        - Otherwise: Single-frame processing
+        - num_workers > 1: Distributed mode (multi-worker parallel processing)
+        - Otherwise: Local mode (in-process with optional batching)
         """
         if not self.setup():
             logger.error("Setup failed, cannot run service")
@@ -321,61 +319,32 @@ class BaseService(ABC):
         if num_workers > 1 and self.supports_multi_worker:
             logger.info(
                 f"Service {self.config.service_id} starting "
-                f"(multi-worker mode, workers={num_workers}, batch_size={batch_size})"
+                f"(distributed mode, workers={num_workers}, batch_size={batch_size})"
             )
-            self._run_multi_worker(num_workers, batch_size)
-        elif batch_size > 1 and self.supports_batching:
-            logger.info(
-                f"Service {self.config.service_id} starting "
-                f"(batched mode, batch_size={batch_size})"
-            )
-            self._run_batched(batch_size)
+            self._run_distributed(num_workers, batch_size)
         else:
-            if batch_size > 1 and not self.supports_batching:
-                logger.warning(
-                    f"Batch size {batch_size} requested but service doesn't support "
-                    f"efficient batching. Falling back to single-frame processing."
-                )
             if num_workers > 1 and not self.supports_multi_worker:
                 logger.warning(
                     f"num_workers={num_workers} requested but service doesn't support "
-                    f"multi-worker mode. Falling back to single-frame processing."
+                    f"multi-worker mode. Falling back to local mode."
                 )
-            logger.info(f"Service {self.config.service_id} starting (single-frame mode)")
-            self._run_single()
+            if batch_size > 1 and not self.supports_batching:
+                logger.warning(
+                    f"batch_size={batch_size} requested but service doesn't support "
+                    f"efficient batching. Will process frames individually."
+                )
+            mode_desc = f"batch_size={batch_size}" if batch_size > 1 else "single-frame"
+            logger.info(f"Service {self.config.service_id} starting (local mode, {mode_desc})")
+            self._run_local(batch_size)
 
-    def _run_single(self):
-        """Run loop processing one frame at a time."""
-        try:
-            for frame_packet in self._input_handler.iterate():
-                if not self._running:
-                    logger.info("Service stopped by signal")
-                    break
+    def _run_local(self, batch_size: int):
+        """
+        Run loop with in-process execution.
 
-                # Process frame
-                start_time = datetime.utcnow()
-                result = self.process_frame(frame_packet)
-                processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
-
-                # Write result to DB if provided
-                if result is not None:
-                    self._write_result(result, frame_packet, processing_time)
-
-                # Update statistics
-                self._frames_processed += 1
-                self._total_processing_time_ms += processing_time
-
-                # Log progress
-                self._log_progress()
-
-        except Exception as e:
-            logger.error(f"Error in service loop: {e}")
-            self._error = str(e)
-        finally:
-            self.shutdown()
-
-    def _run_batched(self, batch_size: int):
-        """Run loop processing frames in batches for better GPU utilization."""
+        Handles both single-frame (batch_size=1) and batched (batch_size>1) processing
+        in a unified code path. When batch_size=1, uses process_frame() directly for
+        optimal performance. When batch_size>1, uses process_batch() for GPU efficiency.
+        """
         accumulator = BatchAccumulator(batch_size=batch_size)
 
         try:
@@ -384,9 +353,17 @@ class BaseService(ABC):
                     logger.info("Service stopped by signal")
                     break
 
-                # Process batch
                 start_time = datetime.utcnow()
-                results = self.process_batch(batch.items)
+
+                # Use optimal code path based on batch size
+                if batch_size == 1:
+                    # Single-frame: direct call, no list overhead
+                    result = self.process_frame(batch.items[0])
+                    results = [result]
+                else:
+                    # Batched: process all frames together for GPU efficiency
+                    results = self.process_batch(batch.items)
+
                 processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
                 per_frame_time = processing_time / len(batch)
 
@@ -403,12 +380,12 @@ class BaseService(ABC):
                 self._log_progress()
 
         except Exception as e:
-            logger.error(f"Error in batched service loop: {e}")
+            logger.error(f"Error in local service loop: {e}")
             self._error = str(e)
         finally:
             self.shutdown()
 
-    def _run_multi_worker(self, num_workers: int, batch_size: int):
+    def _run_distributed(self, num_workers: int, batch_size: int):
         """
         Run with multiple worker processes for true parallel inference.
 
@@ -539,7 +516,7 @@ class BaseService(ABC):
                 time.sleep(0.1)
 
         except Exception as e:
-            logger.error(f"Error in multi-worker service loop: {e}")
+            logger.error(f"Error in distributed service loop: {e}")
             self._error = str(e)
 
         finally:

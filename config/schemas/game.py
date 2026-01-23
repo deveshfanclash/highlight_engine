@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from config.schemas.enums import (
     GameCategory,
     ServiceType,
-    ProcessingPattern,
 )
 
 
@@ -105,11 +104,6 @@ class BaseServiceTemplate(BaseModel):
     device: str = Field(
         default="cuda:0",
         description="Device to run on: 'cpu', 'cuda:0', 'cuda:1', etc."
-    )
-
-    # Processing settings
-    processing_pattern: ProcessingPattern = Field(
-        default=ProcessingPattern.FRAME_BY_FRAME
     )
 
     # Per-service overrides (optional - only specify what differs from defaults)
