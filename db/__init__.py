@@ -7,15 +7,19 @@ Provides storage clients for:
 """
 
 from db.dynamo import (
+    BaseWriter,
     DynamoDBWriter,
     DynamoDBWriterConfig,
     LocalFileWriter,
+    WriterMetrics,
     create_writer,
 )
 
 __all__ = [
+    "BaseWriter",
     "DynamoDBWriter",
     "DynamoDBWriterConfig",
     "LocalFileWriter",
+    "WriterMetrics",
     "create_writer",
 ]

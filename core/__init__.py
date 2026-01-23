@@ -18,7 +18,7 @@ from core.batch_accumulator import BatchAccumulator, Batch
 from core.stream_buffer import StreamBuffer, BufferedFrameProvider, BufferMode
 from core.worker_pool import WorkerPool, WorkerConfig, WorkItem, WorkResult, InferenceWorker
 from core.frame_distributor import FrameDistributor, DistributorStats
-from core.utils import (
+from core.utils.utils import (
     frame_to_timecode,
     get_video_resolution_and_fps,
     get_best_stream_url,

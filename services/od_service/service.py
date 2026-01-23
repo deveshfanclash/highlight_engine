@@ -14,7 +14,7 @@ from services.base_service import BaseService, ServiceConfig
 from input_handlers import FrameInputPacket
 from models.yolo_model import YOLOModel, load_yolo_model
 from models.downloader import download_model
-from output.results import DetectionResults
+from core.utils.output_utils import DetectionResults
 
 logger = logging.getLogger(__name__)
 

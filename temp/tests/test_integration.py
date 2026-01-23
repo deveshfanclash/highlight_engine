@@ -123,7 +123,7 @@ def test_typed_results():
     print("TEST: Typed Results")
     print("="*60)
 
-    from output.results import (
+    from core.utils.output_utils import (
         BoundingBox, Detection, DetectionResults,
         Keypoint, KeypointSkeleton, PoseResults,
         create_detection_results
@@ -318,7 +318,7 @@ def test_yolo_model_integration():
         return
 
     from models.yolo_model import YOLOModel
-    from output.results import DetectionResults
+    from core.utils.output_utils import DetectionResults
 
     print("\n1. Loading model...")
     model = YOLOModel(device="cpu", half_precision=False)
@@ -373,7 +373,7 @@ def test_full_pipeline():
 
     from core.stream_buffer import BufferedFrameProvider, BufferMode
     from models.yolo_model import YOLOModel
-    from output.results import DetectionResults
+    from core.utils.output_utils import DetectionResults
 
     # Simulate frame source
     def synthetic_frames(n_frames=10):

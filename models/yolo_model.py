@@ -17,7 +17,7 @@ from config.class_registry import (
     find_model_class_ids,
     create_class_mapping,
 )
-from output.results import (
+from core.utils.output_utils import (
     BoundingBox,
     Detection,
     DetectionResults,

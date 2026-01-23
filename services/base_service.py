@@ -12,12 +12,12 @@ import logging
 import signal
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Union, List
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from config.schemas import InputType
 from input_handlers import FrameInputHandler, FrameInputPacket
-from db.dynamo import DynamoDBWriter, LocalFileWriter, create_writer
+from db.dynamo import BaseWriter, create_writer
 from core.batch_accumulator import BatchAccumulator, Batch
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class BaseService(ABC):
 
         # Will be initialized in setup()
         self._input_handler: Optional[FrameInputHandler] = None
-        self._db_writer: Optional[Union[DynamoDBWriter, LocalFileWriter]] = None
+        self._db_writer: Optional[BaseWriter] = None
 
         # Statistics
         self._frames_processed = 0
@@ -134,7 +134,6 @@ class BaseService(ABC):
             # Set up writer (DB or local file based on config)
             self._db_writer = create_writer(
                 table_name=self.config.db_table_name,
-                use_background=True,
                 local_mode=self.config.local_mode,
                 local_output_dir=self.config.local_output_dir,
                 match_id=self.config.match_id,
@@ -647,7 +646,7 @@ class BaseService(ABC):
         return self._input_handler
 
     @property
-    def db_writer(self) -> Optional[Union[DynamoDBWriter, LocalFileWriter]]:
+    def db_writer(self) -> Optional[BaseWriter]:
         """Access to DB writer (for advanced use)"""
         return self._db_writer
 

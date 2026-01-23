@@ -12,7 +12,7 @@ from models.yolo_model import YOLOModel, load_yolo_model
 from models.downloader import SourceType, download_model
 
 # Re-export typed results for convenience
-from output.results import Detection, DetectionResults, BoundingBox
+from core.utils.output_utils import Detection, DetectionResults, BoundingBox
 
 __all__ = [
     # Model classes
