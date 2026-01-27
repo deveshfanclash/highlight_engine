@@ -65,6 +65,8 @@ def run_service(
     service_type: Optional[str] = None,
     local_mode: bool = False,
     base_path: Optional[str] = None,
+    video_output: bool = False,
+    video_output_path: Optional[str] = None,
 ):
     """
     Run an inference service based on game configuration.
@@ -77,6 +79,8 @@ def run_service(
         service_type: Specific service type to run (optional): Current system supports only one service at a time
         local_mode: If True, run without infrastructure dependencies
         base_path: Base path directory for local mode
+        video_output: If True, enable annotated video output
+        video_output_path: Path to output video file (optional)
     """
     # Initialize infrastructure config
     infra = get_infra_config(local_mode=local_mode, base_path=base_path)
@@ -174,6 +178,9 @@ def run_service(
             start_segment=max(0, resume_position.segment_number),
             local_mode=local_mode,
             output_dir=base_path,
+            # Video output settings
+            video_output_enabled=video_output,
+            video_output_path=video_output_path,
         )
     except ValueError as e:
         logger.error(f"Failed to create service: {e}")
@@ -236,6 +243,17 @@ def main():
         help="Enable verbose logging"
     )
 
+    # Video output arguments
+    parser.add_argument(
+        "--video-output",
+        action="store_true",
+        help="Enable annotated video output (for local testing)"
+    )
+    parser.add_argument(
+        "--video-output-path",
+        help="Path to output video file (default: output/{match_id}_{service_id}.mp4)"
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -254,6 +272,8 @@ def main():
             service_type=args.service_type,
             local_mode=args.local,
             base_path=args.base_path,
+            video_output=args.video_output,
+            video_output_path=args.video_output_path,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

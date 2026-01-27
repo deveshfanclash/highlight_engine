@@ -311,6 +311,8 @@ def build_od_config(
     start_segment: int = 0,
     local_mode: bool = False,
     output_dir: str = None,
+    video_output_enabled: bool = False,
+    video_output_path: str = None,
 ) -> ODServiceConfig:
     """
     Build ODServiceConfig from game config components.
@@ -381,6 +383,10 @@ def build_od_config(
         # Local mode
         local_mode=local_mode,
         local_output_dir=output_dir,
+
+        # Video output
+        video_output_enabled=video_output_enabled,
+        video_output_path=video_output_path,
 
         # Model
         model_id=model_config.get("model_id", ""),

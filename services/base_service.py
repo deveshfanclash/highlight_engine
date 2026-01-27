@@ -19,6 +19,7 @@ from config.schemas import InputType
 from input_handlers import FrameInputHandler, FrameInputPacket
 from db.dynamo import BaseWriter, create_writer
 from core.batch_accumulator import BatchAccumulator, Batch
+from core.video_output import VideoOutputHandler, create_video_output
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,13 @@ class ServiceConfig:
     local_mode: bool = False  # If True, skip infrastructure dependencies
     local_output_dir: Optional[str] = None  # Output directory for local mode
 
+    # Video output settings (for local testing/debugging)
+    video_output_enabled: bool = False  # Enable annotated video output
+    video_output_path: Optional[str] = None  # Path to output video file
+    video_show_labels: bool = True  # Show class labels on boxes
+    video_show_confidence: bool = True  # Show confidence scores
+    video_box_thickness: int = 2  # Bounding box thickness
+
     # Additional params (service-specific)
     params: Dict[str, Any] = field(default_factory=dict)
 
@@ -98,6 +106,7 @@ class BaseService(ABC):
         # Will be initialized in setup()
         self._input_handler: Optional[FrameInputHandler] = None
         self._db_writer: Optional[BaseWriter] = None
+        self._video_handler: Optional[VideoOutputHandler] = None
 
         # Statistics
         self._frames_processed = 0
@@ -144,6 +153,27 @@ class BaseService(ABC):
                 logger.info(f"Using LOCAL FILE output: {self.config.local_output_dir}")
             else:
                 logger.info(f"Using DynamoDB output: {self.config.db_table_name}")
+
+            # Set up video output handler if enabled
+            if self.config.video_output_enabled:
+                video_path = self.config.video_output_path
+                if not video_path:
+                    # Default path based on output dir
+                    output_dir = self.config.local_output_dir or "output"
+                    video_path = f"{output_dir}/{self.config.match_id}_{self.config.service_id}.mp4"
+
+                # Get FPS from input handler if available
+                fps = self._input_handler.fps or 30.0
+
+                self._video_handler = create_video_output(
+                    output_path=video_path,
+                    fps=fps,
+                    annotate=True,
+                    show_labels=self.config.video_show_labels,
+                    show_confidence=self.config.video_show_confidence,
+                    box_thickness=self.config.video_box_thickness,
+                )
+                logger.info(f"Video output enabled: {video_path}")
 
             # Call service-specific initialization
             if not self.initialize():
@@ -366,10 +396,14 @@ class BaseService(ABC):
                 processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
                 per_frame_time = processing_time / len(batch)
 
-                # Write results to DB
+                # Write results to DB and video
                 for frame_packet, result in zip(batch.items, results):
                     if result is not None:
                         self._write_result(result, frame_packet, per_frame_time)
+
+                    # Write frame to video output if enabled
+                    if self._video_handler:
+                        self._video_handler.write_frame(frame_packet.frame, result)
 
                 # Update statistics
                 self._frames_processed += len(batch)
@@ -607,6 +641,11 @@ class BaseService(ABC):
         # Stop DB writer (will flush remaining items)
         if self._db_writer:
             self._db_writer.stop()
+
+        # Close video output handler
+        if self._video_handler:
+            self._video_handler.close()
+            self._video_handler = None
 
         # Service-specific cleanup
         self.cleanup()

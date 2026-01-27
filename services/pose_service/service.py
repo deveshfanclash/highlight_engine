@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any, List
 from config.schemas import InputType
 from services.base_service import BaseService, ServiceConfig
 from input_handlers import FrameInputPacket
-from core.utils import ensure_model_available
+from models.downloader import download_model
 from models.yolo_model import YOLOModel, load_yolo_model
 
 logger = logging.getLogger(__name__)
@@ -98,10 +98,7 @@ class PoseService(BaseService):
             # Ensure model is available (download if needed)
             if self.pose_config.model_url and not os.path.exists(local_path):
                 logger.info(f"Downloading model from {self.pose_config.model_url}")
-                local_path = ensure_model_available(
-                    self.pose_config.model_url,
-                    local_path
-                )
+                local_path = str(download_model(self.pose_config.model_url))
 
             # Load model
             logger.info(f"Loading pose model from {local_path}")
@@ -237,6 +234,8 @@ def build_pose_config(
     start_segment: int = 0,
     local_mode: bool = False,
     output_dir: str = None,
+    video_output_enabled: bool = False,
+    video_output_path: str = None,
 ) -> PoseServiceConfig:
     """
     Build PoseServiceConfig from game config components.
@@ -298,6 +297,10 @@ def build_pose_config(
         # Local mode
         local_mode=local_mode,
         local_output_dir=output_dir,
+
+        # Video output
+        video_output_enabled=video_output_enabled,
+        video_output_path=video_output_path,
 
         # Model
         model_id=model_config.get("model_id", ""),
