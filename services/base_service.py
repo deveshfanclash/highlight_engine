@@ -57,7 +57,7 @@ class ServiceConfig:
     # Buffer settings (for async frame extraction)
     enable_buffering: Optional[bool] = None  # None = auto-detect based on source type
     buffer_size: int = 30  # Buffer size for frame buffering
-    buffer_mode: str = "drop_old"  # "fifo" or "drop_old"
+    buffer_mode: str = "fifo"  # "fifo" (preserve all frames) or "drop_old" (real-time streams)
 
     # Device settings
     device: str = "cpu"  # "cpu", "cuda:0", "cuda:1", etc.
@@ -658,12 +658,33 @@ class BaseService(ABC):
 
     def _setup_signal_handlers(self):
         """Set up handlers for graceful shutdown signals"""
+        import atexit
+
         def signal_handler(signum, frame):
-            logger.info(f"Received signal {signum}, initiating shutdown")
-            self.stop()
+            logger.info(f"Received signal {signum}, initiating graceful shutdown")
+            self._running = False
+            # Directly close video handler to ensure it's finalized even if loop doesn't exit cleanly
+            if self._video_handler:
+                try:
+                    self._video_handler.close()
+                    self._video_handler = None
+                    logger.info("Video handler closed via signal handler")
+                except Exception as e:
+                    logger.warning(f"Error closing video handler in signal handler: {e}")
+
+        def atexit_handler():
+            """Ensure video is closed on process exit"""
+            if self._video_handler:
+                try:
+                    self._video_handler.close()
+                    self._video_handler = None
+                    logger.info("Video handler closed via atexit handler")
+                except Exception as e:
+                    logger.warning(f"Error closing video handler in atexit: {e}")
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
+        atexit.register(atexit_handler)
 
     # =========================================================================
     # PROPERTIES

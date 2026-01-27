@@ -128,13 +128,20 @@ class FrameInputHandler(BaseInputHandler):
         # Auto-detect buffering based on source type
         if buffered is None:
             source_type = SourceRouter.detect(input_source)
-            if SourceRouter.is_stream(source_type):
-                # HLS or RTSP: enable buffering with DROP_OLD for real-time
+            is_remote = input_source.startswith('http://') or input_source.startswith('https://')
+
+            if SourceRouter.is_stream(source_type) and is_remote:
+                # Live remote stream (HLS/RTSP over network): DROP_OLD for real-time
                 self.buffered = True
                 self.buffer_mode = BufferMode.DROP_OLD
-                logger.info(f"Auto-enabled buffering for stream source: {source_type.value}")
+                logger.info(f"Auto-enabled DROP_OLD buffering for live stream: {source_type.value}")
+            elif SourceRouter.is_stream(source_type):
+                # Local HLS/stream file (VOD): use FIFO to preserve all frames
+                self.buffered = True
+                self.buffer_mode = BufferMode.FIFO
+                logger.info(f"Auto-enabled FIFO buffering for local stream file: {source_type.value}")
             else:
-                # Local files: no buffering needed
+                # Local video files (MP4, etc.): no buffering needed
                 self.buffered = False
                 self.buffer_mode = buffer_mode
         else:
