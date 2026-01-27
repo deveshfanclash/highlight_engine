@@ -220,9 +220,21 @@ class BufferedFrameProvider:
                 if not self._running:
                     break
 
-                success = self.buffer.put(frame, timeout=1.0)
-                if not success and self._running:
-                    logger.warning("Buffer full, frame dropped")
+                if self.buffer.mode == BufferMode.FIFO:
+                    # FIFO mode: Block until space available (like old code)
+                    # This creates natural backpressure - no frames dropped
+                    while self._running:
+                        success = self.buffer.put(frame, timeout=1.0)
+                        if success:
+                            break
+                        # Keep trying - don't drop frames in FIFO mode
+                        logger.debug("Buffer full, waiting for space (FIFO mode)")
+                else:
+                    # DROP_OLD mode: Use timeout, frame may be dropped
+                    # (Old frames already removed in buffer.put())
+                    success = self.buffer.put(frame, timeout=1.0)
+                    if not success and self._running:
+                        logger.warning("Buffer full, frame dropped (DROP_OLD mode)")
 
         except Exception as e:
             logger.error(f"Error in frame producer: {e}")

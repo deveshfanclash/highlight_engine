@@ -44,9 +44,6 @@ class InfraConfig:
     aws_access_key: Optional[str] = None
     aws_secret_key: Optional[str] = None
 
-    # DynamoDB defaults
-    db_default_table: str = "inference_results"
-
     # Kafka Configuration
     kafka_broker_url: Optional[str] = None
     kafka_topic: Optional[str] = None
@@ -114,13 +111,6 @@ def _load_from_env() -> InfraConfig:
         aws_access_key=os.getenv("AWS_ACCESS_KEY_DB"),
         aws_secret_key=os.getenv("AWS_SECRET_KEY_DB"),
 
-        # DynamoDB
-        db_default_table=os.getenv("DB_DEFAULT_TABLE", "inference_results"),
-
-        # Kafka
-        kafka_broker_url=os.getenv("KAFKA_BROKER_URL"),
-        kafka_topic=os.getenv("KAFKA_TOPIC"),
-
         # Slack
         slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
 
@@ -148,13 +138,6 @@ def _create_local_config(base_path: Optional[str] = None) -> InfraConfig:
         aws_region="us-east-1",
         aws_access_key=None,
         aws_secret_key=None,
-
-        # DynamoDB
-        db_default_table="inference_results",
-
-        # Kafka - disabled
-        kafka_broker_url=None,
-        kafka_topic=None,
 
         # Slack - disabled
         slack_webhook_url=None,
