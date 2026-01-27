@@ -8,6 +8,7 @@ Re-exports utilities for convenience:
 
 from core.utils.utils import (
     frame_to_timecode,
+    frame_to_ms,
     get_video_resolution_and_fps,
     get_best_stream_url,
     download_file,
@@ -29,6 +30,7 @@ from core.utils.output_utils import (
 __all__ = [
     # Utils
     "frame_to_timecode",
+    "frame_to_ms",
     "get_video_resolution_and_fps",
     "get_best_stream_url",
     "download_file",

@@ -12,7 +12,7 @@ import logging
 import signal
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, Union, List
 from datetime import datetime
 
 from config.schemas import InputType
