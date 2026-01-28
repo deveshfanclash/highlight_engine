@@ -10,7 +10,7 @@ Usage:
       --source /path/to/video.mp4 \
       --local
 
-    # Production mode (requires AWS credentials via env vars)
+    # Production or development mode (requires AWS credentials via env vars)
     python main.py \
       --game-config config/games/football_v1.yaml \
       --match-id match_12345 \
@@ -26,264 +26,147 @@ Resume Modes:
 import argparse
 import logging
 import sys
-from typing import Optional
 
-from config.loader import ConfigLoader
-from config.environment import get_infra_config
-from config.schemas import ServiceType
-from core.resume import ResumeMode, get_resume_position
-from services import registry
-
-# Import services to trigger registration
-from services import od_service  # noqa: F401
-from services import pose_service  # noqa: F401
-
-logger = logging.getLogger(__name__)
-
-
-def setup_logging(verbose: bool = False):
-    """Configure logging for the application"""
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)]
-    )
-
-#Load dotenv from .env file if not from orchestrator or shell set with env
+# Load environment variables from .env file
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
 
-def run_service(
-    game_config_path: str,
-    match_id: str,
-    source_url: str,
-    resume_mode: ResumeMode,
-    service_type: Optional[str] = None,
-    local_mode: bool = False,
-    base_path: Optional[str] = None,
-    video_output: bool = False,
-    video_output_path: Optional[str] = None,
-):
-    """
-    Run an inference service based on game configuration.
+from config.loader import load_service_configs
+from config.environment import get_infra_config
+from core.resume import ResumeMode, get_resume_position
+from services import registry
 
-    Args:
-        game_config_path: Path to game config YAML file
-        match_id: Match identifier
-        source_url: Stream URL or file path
-        resume_mode: Resume mode (start, current, latest)
-        service_type: Specific service type to run (optional): Current system supports only one service at a time
-        local_mode: If True, run without infrastructure dependencies
-        base_path: Base path directory for local mode
-        video_output: If True, enable annotated video output
-        video_output_path: Path to output video file (optional)
-    """
-    # Initialize infrastructure config
-    infra = get_infra_config(local_mode=local_mode, base_path=base_path)
+# Import services to trigger registration
+from services import od_service  # noqa: F401
 
-    if local_mode:
-        logger.info("Running in LOCAL MODE - no AWS credentials required")
-        base_path = base_path or str(infra.base_path)
-
-    # Load game configuration
-    logger.info(f"Loading game config from: {game_config_path}")
-    game_template, model_registry = ConfigLoader.load_from_yaml(game_config_path)
-
-    logger.info(f"Game: {game_template.game_name} (ID: {game_template.game_id})")
-    logger.info(f"Models loaded: {len(model_registry.models)}")
-    logger.info(f"Services configured: {len(game_template.services)}")
-
-    # Get enabled services
-    enabled_services = game_template.get_enabled_services()
-    if not enabled_services:
-        logger.error("No enabled services found in game config")
-        return
-
-    # Select service to run start------------------------------
-    target_service = None
-    if service_type:
-        for service in enabled_services:
-            if service.service_type.value == service_type:
-                target_service = service
-                break
-        if not target_service:
-            logger.error(f"Service type '{service_type}' not found or not enabled")
-            return
-    else:
-        target_service = enabled_services[0]
-
-    logger.info(f"Running service: {target_service.service_type.value}")
-    #----Code to add service override for a single type-----
-
-    # Get model for this service (direct lookup by model_id)
-    model_id = getattr(target_service, 'model_id', None)
-    if not model_id:
-        logger.error(f"Service {target_service.service_type.value} has no model_id configured")
-        return
-
-    model = model_registry.get_model(model_id)
-    if not model:
-        logger.error(f"Model '{model_id}' not found in registry")
-        return
-
-    model_config = model.model_dump()
-    logger.info(f"Using model: {model_config['model_id']}")
-
-    # Resolve settings: defaults + service-specific overrides
-    inference_settings = game_template.resolve_inference_settings(target_service)
-    output_settings = game_template.resolve_output_settings(target_service)
-
-    # Build service config dict with resolved settings
-    service_config_dict = target_service.model_dump()
-    service_config_dict.update(output_settings)
-
-    # Log effective settings
-    if inference_settings["num_workers"] > 1:
-        logger.info(f"Multi-worker mode: {inference_settings['num_workers']} workers")
-
-    # Calculate resume position (using resolved db_table_name)
-    service_id = f"{target_service.service_type.value}_{model_config['model_id']}"
-    db_table_name = output_settings.get("db_table_name", "inference_results")
-
-    resume_position = get_resume_position(
-        mode=resume_mode,
-        match_id=match_id,
-        service_id=service_id,
-        source_url=source_url,
-        table_name=db_table_name,
-        local_mode=local_mode,
-    )
-
-    logger.info(
-        f"Resume position: frame={resume_position.frame_number}, "
-        f"segment={resume_position.segment_number}"
-    )
-
-    effective_device = service_config_dict.get("device", "cuda:0")
-    logger.info(f"Device: {effective_device}")
-
-    try:
-        service = registry.create(
-            service_type=target_service.service_type,
-            match_id=match_id,
-            source_url=source_url,
-            model_config=model_config,
-            service_config=service_config_dict,
-            inference_settings=inference_settings,
-            start_frame=max(0, resume_position.frame_number),
-            start_segment=max(0, resume_position.segment_number),
-            local_mode=local_mode,
-            output_dir=base_path,
-            # Video output settings
-            video_output_enabled=video_output,
-            video_output_path=video_output_path,
-        )
-    except ValueError as e:
-        logger.error(f"Failed to create service: {e}")
-        return
-
-    # Run the service (blocking)
-    logger.info("Starting service...")
-    service.run()
-    logger.info("Service completed")
+logger = logging.getLogger(__name__)
 
 
-def main():
-    """Main entry point"""
+def parse_args():
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Inference System Entry Point",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""CLI Overrides: 
-        --device overrides the device setting from service config.
-        If not provided, the device value from the YAML config is used.
-        """
     )
 
-    parser.add_argument(
-        "--game-config", "-g",
-        required=True,
-        help="Path to game config YAML file"
-    )
-    parser.add_argument(
-        "--match-id", "-m",
-        required=True,
-        help="Match identifier"
-    )
-    parser.add_argument(
-        "--source", "-s",
-        required=True,
-        help="Stream URL or file path"
-    )
-    parser.add_argument(
-        "--resume", "-r",
-        choices=["start", "current", "latest"],
-        default="start",
-        help="Resume mode (default: start)"
-    )
-    parser.add_argument(
-        "--service-type",
-        help="Specific service type to run (default: first enabled)"
-    )
-    parser.add_argument(
-        "--local", "-l",
-        action="store_true",
-        help="Run in local mode (no AWS credentials required, outputs to files)"
-    )
-    parser.add_argument(
-        "--base-path", "-b",
-        help="Base path directory for local mode (default: ./output)"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
+    # Required arguments
+    parser.add_argument("--game-config", "-g", required=True, help="Path to game config YAML")
+    parser.add_argument("--match-id", "-m", required=True, help="Match identifier")
+    parser.add_argument("--source", "-s", required=True, help="Stream URL or file path")
+
+    # Optional arguments
+    parser.add_argument("--resume", "-r", choices=["start", "current", "latest"], default="start")
+    parser.add_argument("--service-type", help="Specific service type to run (default: first enabled)")
+    parser.add_argument("--local", "-l", action="store_true", help="Run in local mode")
+    parser.add_argument("--base-path", "-b", help="Base path for local mode output")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+
+    # Video output
+    parser.add_argument("--video-output", action="store_true", help="Enable annotated video output")
+    parser.add_argument("--video-output-path", help="Path to output video file")
+
+    return parser.parse_args()
+
+
+def setup_logging(verbose: bool = False):
+    """Configure logging."""
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
     )
 
-    # Video output arguments
-    parser.add_argument(
-        "--video-output",
-        action="store_true",
-        help="Enable annotated video output (for local testing)"
-    )
-    parser.add_argument(
-        "--video-output-path",
-        help="Path to output video file (default: output/{match_id}_{service_id}.mp4)"
-    )
 
-    args = parser.parse_args()
+def main():
+    args = parse_args()
+    setup_logging(args.verbose)
 
-    # Setup logging
-    setup_logging(verbose=args.verbose)
+    # Initialize infrastructure config
+    infra = get_infra_config(local_mode=args.local, base_path=args.base_path)
+    base_path = args.base_path or str(infra.base_path)
 
-    # Map resume string to enum
+    if args.local:
+        logger.info("Running in LOCAL MODE - no AWS credentials required")
+
+    # Load resolved service configs
+    logger.info(f"Loading config: {args.game_config}")
+    service_configs = load_service_configs(args.game_config)
+
+    if not service_configs:
+        logger.error("No enabled services found in config")
+        sys.exit(1)
+
+    # Select service to run
+    if args.service_type:
+        target = next(
+            (cfg for cfg in service_configs if cfg.service_type.value == args.service_type),
+            None
+        )
+        if not target:
+            logger.error(f"Service type '{args.service_type}' not found or not enabled")
+            sys.exit(1)
+    else:
+        target = service_configs[0]
+
+    logger.info(f"Running service: {target.service_id} on {target.device}")
+    logger.info(f"Model: {target.model_config.get('model_id')}")
+
+    # Calculate resume position
     resume_mode = ResumeMode(args.resume)
+    resume_position = get_resume_position(
+        mode=resume_mode,
+        match_id=args.match_id,
+        service_id=target.service_id,
+        source_url=args.source,
+        table_name=target.output_settings.get("db_table_name", "inference_results"),
+        local_mode=args.local,
+    )
+    logger.info(f"Resume: frame={resume_position.frame_number}, segment={resume_position.segment_number}")
 
-    # Run the service
+    # Build service config dict (merge output settings into service config)
+    service_config_dict = {
+        "device": target.device,
+        **target.output_settings,
+        **target.extra,
+    }
+
+    # Create service
     try:
-        run_service(
-            game_config_path=args.game_config,
+        service = registry.create(
+            service_type=target.service_type,
             match_id=args.match_id,
             source_url=args.source,
-            resume_mode=resume_mode,
-            service_type=args.service_type,
+            model_config=target.model_config,
+            service_config=service_config_dict,
+            inference_settings=target.inference_settings,
+            start_frame=max(0, resume_position.frame_number),
+            start_segment=max(0, resume_position.segment_number),
             local_mode=args.local,
-            base_path=args.base_path,
-            video_output=args.video_output,
+            output_dir=base_path,
+            video_output_enabled=args.video_output,
             video_output_path=args.video_output_path,
         )
+    except ValueError as e:
+        logger.error(f"Failed to create service: {e}")
+        sys.exit(1)
+
+    # Run
+    logger.info("Starting service...")
+    try:
+        service.run()
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
-        sys.exit(0)
     except Exception as e:
-        logger.error(f"Error running service: {e}")
+        logger.error(f"Error: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()
         sys.exit(1)
+
+    logger.info("Service completed")
 
 
 if __name__ == "__main__":
